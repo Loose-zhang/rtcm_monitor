@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RTCM Monitor · 频点 / 信噪比可视化</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1419; --card:#1a212b; --card2:#222c38; --card3:#283443; --line:#2c3a48;
+    --txt:#e6edf3; --mut:#8b9bb0; --acc:#4aa8ff;
+    --ok:#3fb950; --warn:#d29922; --err:#f85149; --purple:#bc8cff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
+       background:var(--bg);color:var(--txt);font-size:13px}
+  svg.ic{width:15px;height:15px;flex:none;stroke:currentColor;stroke-width:2;
+         stroke-linecap:round;stroke-linejoin:round;fill:none;vertical-align:-2px}
+
+  /* ---------- header ---------- */
+  header{display:flex;align-items:center;gap:14px;padding:10px 18px;
+         background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:9px}
+  .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.5px}
+  .brand .sub{color:var(--mut);font-weight:400;font-size:12px;margin-left:2px}
+  .live-dot{position:relative;width:10px;height:10px;flex:none}
+  .live-dot i{position:absolute;inset:0;border-radius:50%;background:var(--mut)}
+  .live-dot.on i{background:var(--ok)}
+  .live-dot.on::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--ok);
+        opacity:.6;animation:ping 1.4s cubic-bezier(0,0,.2,1) infinite}
+  .live-dot.err i{background:var(--err)}
+  @keyframes ping{75%,100%{transform:scale(2.4);opacity:0}}
+  .pill{padding:3px 10px;border-radius:20px;font-size:12px;background:var(--card2);color:var(--mut)}
+  .pill.live{background:rgba(63,185,80,.15);color:var(--ok)}
+  .pill.err{background:rgba(248,81,73,.15);color:var(--err)}
+
+  /* ---------- KPI strip ---------- */
+  .kpis{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+  .kpi{display:flex;align-items:center;gap:9px;background:var(--card2);border:1px solid var(--line);
+       border-radius:8px;padding:6px 12px;min-width:96px}
+  .kpi .kic{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;
+            background:var(--card3);flex:none}
+  .kpi .kv{display:flex;flex-direction:column;line-height:1.15}
+  .kpi .kv b{font-size:15px;font-weight:700}
+  .kpi .kv span{color:var(--mut);font-size:10.5px}
+  .kpi.acc .kic{color:var(--acc)} .kpi.acc b{color:var(--acc)}
+  .kpi.purple .kic{color:var(--purple)} .kpi.purple b{color:var(--purple)}
+  .kpi.ok .kic{color:var(--ok)} .kpi.ok b{color:var(--ok)}
+  .kpi.warn .kic{color:var(--warn)} .kpi.warn b{color:var(--warn)}
+
+  /* ---------- layout ---------- */
+  main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:12px;padding:12px;align-items:start}
+  .col{display:flex;flex-direction:column;gap:12px;min-width:0}
+  .grid2{display:grid;grid-template-columns:2fr 1fr;gap:12px;min-width:0}
+  .grid-ts{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0}
+  @media(max-width:1100px){
+    main{grid-template-columns:1fr}
+    .grid2,.grid-ts{grid-template-columns:1fr}
+  }
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
+  .card .bd{padding:12px}
+  .card h2{font-size:13px;margin:0;font-weight:600;display:flex;align-items:center;gap:8px}
+  .card h2 .tag{font-size:11px;color:var(--mut);font-weight:400}
+  /* collapsible header */
+  .chead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 12px;
+         cursor:pointer;user-select:none;background:var(--card)}
+  .chead:hover{background:var(--card2)}
+  .chead .chev{transition:transform .2s;color:var(--mut)}
+  .chead.collapsed .chev{transform:rotate(-90deg)}
+  .cbody{padding:12px;border-top:1px solid var(--line)}
+  .cbody.hidden{display:none}
+  .summary{padding:8px 12px;border-top:1px solid var(--line);background:var(--card2);
+           font-size:11.5px;color:var(--mut);display:flex;align-items:center;gap:7px}
+
+  /* ---------- connection form ---------- */
+  #conn,#conn2{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  #conn .fld,#conn2 .fld{display:flex;flex-direction:column;gap:3px}
+  #conn label,#conn2 label{font-size:11px;color:var(--mut)}
+  #conn input,#conn select,#conn2 input{background:var(--card2);border:1px solid var(--line);color:var(--txt);
+        border-radius:6px;padding:6px 8px;font-size:12px;width:100%;min-width:0}
+  #conn .fld,#conn2 .fld{flex:1 1 130px}
+  button{background:var(--acc);color:#06121f;border:none;border-radius:6px;padding:7px 14px;
+         font-weight:600;cursor:pointer;font-size:12px}
+  button.ghost{background:var(--card2);color:var(--txt);border:1px solid var(--line)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btnrow{display:flex;gap:8px;width:100%;margin-top:4px}
+  .btnrow button{flex:1}
+  .modetabs{display:flex;gap:6px;margin-bottom:10px}
+  .modetabs button{background:var(--card2);color:var(--mut);border:1px solid var(--line);flex:1}
+  .modetabs button.on{background:var(--acc);color:#06121f;border-color:var(--acc)}
+  .systabs{display:flex;gap:6px;flex-wrap:wrap}
+  .systabs button{background:var(--card2);color:var(--mut);border:1px solid var(--line);
+        padding:4px 11px;font-size:11.5px;border-radius:6px;display:inline-flex;align-items:center;gap:5px}
+  .systabs button.on{background:var(--acc);color:#06121f;border-color:var(--acc)}
+  .systabs button .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .systabs button .cnt{opacity:.7;font-size:10px}
+  .hidden{display:none}
+  .note{color:var(--mut);font-size:11px;margin-top:8px;line-height:1.5}
+
+  /* ---------- BDS aggregated anomaly tags ---------- */
+  .anombox{padding:9px 10px;border-radius:7px;border:1px solid;margin-bottom:8px}
+  .anombox:last-child{margin-bottom:0}
+  .anombox .ah{font-weight:600;margin-bottom:7px;display:flex;align-items:center;gap:6px;font-size:12px}
+  .anombox .atags{display:flex;flex-wrap:wrap;gap:4px}
+  .anombox .atag{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;
+                 padding:1px 7px;border-radius:5px;font-weight:600}
+  .anombox.error{background:rgba(248,81,73,.10);border-color:rgba(248,81,73,.45)}
+  .anombox.error .ah{color:var(--err)} .anombox.error .atag{background:rgba(248,81,73,.22);color:#ffb4af}
+  .anombox.warn{background:rgba(210,153,34,.10);border-color:rgba(210,153,34,.45)}
+  .anombox.warn .ah{color:var(--warn)} .anombox.warn .atag{background:rgba(210,153,34,.22);color:#ffd97a}
+  .anombox.info{background:rgba(139,155,176,.08);border-color:rgba(139,155,176,.35)}
+  .anombox.info .ah{color:var(--mut)} .anombox.info .atag{background:rgba(139,155,176,.18);color:#c5d1e0}
+  .anombox.ok{background:rgba(63,185,80,.08);border-color:rgba(63,185,80,.35)}
+  .anombox.ok .ah{color:var(--ok)}
+
+  /* ---------- matrix ---------- */
+  table{border-collapse:collapse;width:100%;font-size:11.5px}
+  th,td{border:1px solid var(--line);padding:3px 6px;text-align:center;white-space:nowrap}
+  th{background:var(--card2);color:var(--mut);position:sticky;top:0;z-index:1}
+  td.sat{font-weight:600;text-align:left;position:sticky;left:0;background:var(--card);z-index:1}
+  .matwrap{max-height:380px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+  .badge{font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px}
+  .b2{background:rgba(74,168,255,.18);color:var(--acc)}
+  .b3{background:rgba(63,185,80,.16);color:var(--ok)}
+  .brow-err{outline:2px solid var(--err);outline-offset:-2px}
+  .brow-warn{outline:2px solid var(--warn);outline-offset:-2px}
+  td.cn0-crit{animation:blink 1.1s ease-in-out infinite}
+  @keyframes blink{50%{opacity:.45}}
+  .legend{display:flex;flex-wrap:wrap;gap:8px 14px}
+  .legend .it{display:flex;align-items:center;gap:5px;color:var(--mut)}
+  .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
+  .row{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  select.sel{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 8px}
+  canvas{max-width:100%}
+  .freqtab td{text-align:left}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span id="liveDot" class="live-dot"><i></i></span>
+    <h1>RTCM MONITOR</h1>
+    <span class="sub">NTRIP 频点 / 信噪比实时可视化</span>
+  </div>
+  <span id="statePill" class="pill">未连接</span>
+
+  <div class="kpis">
+    <div class="kpi acc">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span>
+      <span class="kv"><b id="sStation">–</b><span>基准站</span></span>
+    </div>
+    <div class="kpi acc">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.6"/><path d="M16.2 7.8a6 6 0 0 1 0 8.5M7.8 16.3a6 6 0 0 1 0-8.5M19 5a9 9 0 0 1 0 14M5 19A9 9 0 0 1 5 5"/></svg></span>
+      <span class="kv"><b id="sSats">0</b><span>卫星数</span></span>
+    </div>
+    <div class="kpi purple">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><path d="M4.9 19.1A10 10 0 0 1 4.9 4.9M7.8 16.2a6 6 0 0 1 0-8.5M16.2 7.8a6 6 0 0 1 0 8.5M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2"/></svg></span>
+      <span class="kv"><b id="sSig">0</b><span>信号数</span></span>
+    </div>
+    <div class="kpi ok">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+      <span class="kv"><b id="sRate">0</b><span>报文/s</span></span>
+    </div>
+    <div class="kpi warn">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+      <span class="kv"><b id="sTime">–</b><span>历元 TOW</span></span>
+    </div>
+    <div class="kpi">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 4v16"/></svg></span>
+      <span class="kv"><b id="sBytes">0</b><span>已收(字节/帧)</span></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ============ LEFT: configuration + checks ============ -->
+  <div class="col">
+
+    <!-- data source -->
+    <section class="card">
+      <div class="chead collapsed" onclick="toggleCard('srcBody',this)">
+        <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> NTRIP 数据源</h2>
+        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div id="srcBody" class="cbody hidden">
+        <div class="modetabs">
+          <button id="tabNtrip" class="on" onclick="event.stopPropagation();setMode('ntrip')">NTRIP 接入</button>
+          <button id="tabFile" onclick="event.stopPropagation();setMode('file')">文件回放</button>
+        </div>
+        <div id="conn">
+          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="host" placeholder="rtk.example.com"></div>
+          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="port" value="2101"></div>
+          <div class="fld ntrip"><label>挂载点</label><input id="mount" placeholder="RTCM33"></div>
+          <div class="fld ntrip"><label>用户名</label><input id="user"></div>
+          <div class="fld ntrip"><label>密码</label><input id="pass" type="password"></div>
+          <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="gga" placeholder="$GPGGA,... 留空=非VRS"></div>
+          <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="path" placeholder="/path/to/Bds.rtcm"></div>
+          <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="speed" value="1"></div>
+          <div class="btnrow">
+            <button id="btnConn" onclick="connect()">连接</button>
+            <button id="btnDisc" class="ghost" onclick="disconnect()" disabled>断开</button>
+          </div>
+        </div>
+        <div class="note">凭据只发送到本机后端再转发给 caster，不写入磁盘。NTRIP 需在能访问该 caster 的网络环境下运行。</div>
+      </div>
+      <div class="summary" id="srcSummary"><span id="srcDot" class="live-dot"><i></i></span><span id="srcSummaryTxt">未连接</span></div>
+    </section>
+
+    <!-- ephemeris -->
+    <section class="card">
+      <div class="chead collapsed" onclick="toggleCard('ephBody',this)">
+        <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><ellipse cx="12" cy="12" rx="10" ry="4.5"/><ellipse cx="12" cy="12" rx="10" ry="4.5" transform="rotate(60 12 12)"/></svg> 广播星历流 (BCEP)</h2>
+        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div id="ephBody" class="cbody hidden">
+        <div class="note" style="margin-top:0;margin-bottom:8px">独立 NTRIP 流 · 用于算卫星位置 / 真实天空图</div>
+        <div id="conn2">
+          <div class="fld" style="flex-basis:100%"><label>Caster 地址</label><input id="ehost" value="ntrip.data.gnss.ga.gov.au"></div>
+          <div class="fld" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="eport" value="2101"></div>
+          <div class="fld"><label>挂载点</label><input id="emount" value="BCEP00BKG0"></div>
+          <div class="fld"><label>用户名</label><input id="euser" placeholder="可选"></div>
+          <div class="fld"><label>密码</label><input id="epass" type="password" placeholder="可选"></div>
+          <div class="btnrow">
+            <button onclick="connectEph()">连接星历</button>
+            <button class="ghost" onclick="disconnectEph()">断开</button>
+          </div>
+        </div>
+      </div>
+      <div class="summary" id="ephStat">未连接</div>
+    </section>
+
+    <!-- BDS reconstruction check -->
+    <section class="card" id="anomCard">
+      <div class="bd">
+        <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--warn)"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>
+          北斗重构校验 <span class="tag">2026/04 PRN 重构表</span></h2>
+        <div id="anoms" style="margin-top:10px"><div class="note">等待数据…</div></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ============ RIGHT: matrix + skyplot + charts ============ -->
+  <div class="col">
+
+    <div class="grid2">
+      <!-- matrix -->
+      <section class="card">
+        <div class="bd">
+          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            卫星 × 信号矩阵 <span class="tag">单元格 = CN0 热力图</span></h2>
+          <div class="matwrap" style="margin-top:10px"><table id="matrix"></table></div>
+        </div>
+      </section>
+      <!-- skyplot -->
+      <section class="card">
+        <div class="bd">
+          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><circle cx="12" cy="12" r="9"/><path d="m16.2 7.8-2.9 5.4-5.5 3 2.9-5.4z"/></svg>
+            天空图 (CN0 雷达) <span class="tag">点大小 ∝ CN0</span></h2>
+          <svg id="sky" viewBox="0 0 320 320" width="100%" style="max-height:300px;margin-top:8px"></svg>
+          <div class="note" id="skyNote">接入广播星历流后显示真实方位/高度角；未接入时按系统环形近似展示。</div>
+        </div>
+      </section>
+    </div>
+
+    <!-- CN0 bars -->
+    <section class="card">
+      <div class="bd">
+        <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="13" width="3" height="5"/></svg>
+          CN0 信噪比 <span class="tag">每颗星按信号分组着色 (dB-Hz)</span></h2>
+        <div class="systabs" id="barTabs" style="margin-top:10px"></div>
+        <div class="barscroll" style="overflow-x:auto;overflow-y:hidden;margin-top:8px">
+          <div id="barInner" style="position:relative;height:260px;min-width:100%"><canvas id="barChart"></canvas></div>
+        </div>
+        <div class="note" id="barNote">星数较多时图表可横向滚动；点上方标签按系统筛选。鼠标移到某颗星的垂直区间即可看全部信号读数。</div>
+      </div>
+    </section>
+
+    <div class="grid-ts">
+      <!-- time series -->
+      <section class="card">
+        <div class="bd">
+          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg> CN0 时间序列</h2>
+          <div class="row" style="margin-top:8px">
+            <select id="tsSel" class="sel" onchange="resetTs()" style="flex:1"></select>
+          </div>
+          <div style="position:relative;height:190px"><canvas id="tsChart"></canvas></div>
+        </div>
+      </section>
+      <!-- frequency legend -->
+      <section class="card">
+        <div class="bd">
+          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--purple)"><path d="M2 12h4l3-9 6 18 3-9h4"/></svg> 频点 / 信号图例</h2>
+          <div class="legend" id="legend" style="margin-top:10px"></div>
+          <table class="freqtab" id="freqtab" style="margin-top:10px"></table>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+
+<script>
+// ---------- collapsible cards ----------
+function toggleCard(id, head){
+  const el=document.getElementById(id);
+  el.classList.toggle('hidden');
+  head.classList.toggle('collapsed', el.classList.contains('hidden'));
+}
+
+// ---------- signal color / order ----------
+const SIG_COLOR = {
+  B1I:'#4aa8ff', B1C:'#3fb950', B1A:'#7ee787',
+  B2I:'#bc8cff', B2a:'#ffa657', B2b:'#f85149', 'B2ab':'#ff7b72',
+  B3I:'#a371f7', B3A:'#d2a8ff',
+  L1:'#4aa8ff', L2:'#ffa657', L5:'#3fb950',
+  E1:'#4aa8ff','E5a':'#3fb950','E5b':'#bc8cff','E5(a+b)':'#ff7b72',E6:'#ffa657',
+  G1:'#4aa8ff',G2:'#ffa657',G3:'#3fb950'
+};
+const SIG_ORDER = ['B1I','B1C','B1A','B2I','B2a','B2b','B2ab','B3I','B3A',
+                   'L1','L2','L5','E1','E5a','E5b','E5(a+b)','E6','G1','G2','G3'];
+const SYS_COLOR = {C:'#f85149',G:'#4aa8ff',E:'#3fb950',R:'#ffa657',J:'#bc8cff',S:'#8b9bb0',I:'#d2a8ff'};
+function sigColor(s){return SIG_COLOR[s]||'#8b9bb0';}
+function cn0Color(v){ if(!v) return 'transparent';
+  if(v>=45)return 'rgba(63,185,80,.85)'; if(v>=40)return 'rgba(120,200,80,.8)';
+  if(v>=35)return 'rgba(210,180,34,.8)'; if(v>=30)return 'rgba(210,140,34,.8)';
+  return 'rgba(248,81,73,.8)'; }
+
+// ---------- mode ----------
+let mode='ntrip';
+function setMode(m){mode=m;
+  document.getElementById('tabNtrip').classList.toggle('on',m==='ntrip');
+  document.getElementById('tabFile').classList.toggle('on',m==='file');
+  document.querySelectorAll('#conn .ntrip').forEach(e=>e.classList.toggle('hidden',m!=='ntrip'));
+  document.querySelectorAll('#conn .file').forEach(e=>e.classList.toggle('hidden',m!=='file'));
+}
+async function connect(){
+  let body={mode};
+  if(mode==='ntrip'){body.host=host.value;body.port=port.value;body.mountpoint=mount.value;
+    body.user=user.value;body.password=pass.value;body.gga=gga.value;}
+  else{body.path=path.value;body.speed=speed.value;}
+  const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!j.ok){alert('连接失败: '+(j.error||''));return;}
+  btnConn.disabled=true;btnDisc.disabled=false;
+}
+async function disconnect(){await fetch('/api/disconnect',{method:'POST'});
+  btnConn.disabled=false;btnDisc.disabled=true;}
+async function connectEph(){
+  const body={mode:'ntrip',host:ehost.value,port:eport.value,mountpoint:emount.value,
+              user:euser.value,password:epass.value};
+  const r=await fetch('/api/connect_eph',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  const j=await r.json(); if(!j.ok)alert('星历连接失败: '+(j.error||''));
+}
+async function disconnectEph(){await fetch('/api/disconnect_eph',{method:'POST'});}
+
+// ---------- charts ----------
+let barChart, tsChart, tsData=[], tsKey=null;
+function initCharts(){
+  barChart=new Chart(document.getElementById('barChart'),{type:'bar',
+    data:{labels:[],datasets:[]},
+    options:{animation:false,responsive:true,maintainAspectRatio:false,
+      // hover anywhere in a satellite's vertical band -> tooltip lists every signal
+      interaction:{mode:'index',intersect:false,axis:'x'},
+      scales:{y:{min:20,max:55,title:{display:true,text:'CN0 dB-Hz',color:'#8b9bb0'},
+                 grid:{color:'#2c3a48'},ticks:{color:'#8b9bb0'}},
+              x:{grid:{display:false},ticks:{color:'#8b9bb0',maxRotation:90,minRotation:60,font:{size:10}}}},
+      plugins:{legend:{labels:{color:'#e6edf3',boxWidth:12,font:{size:11}}},
+        tooltip:{itemSort:(a,b)=>b.parsed.y-a.parsed.y,
+          callbacks:{title:it=>it.length?('卫星 '+it[0].label):'',
+                     label:c=>c.parsed.y!=null?` ${c.dataset.label}: ${c.parsed.y} dB-Hz`:null}}}}});
+  tsChart=new Chart(document.getElementById('tsChart'),{type:'line',
+    data:{labels:[],datasets:[{label:'CN0',data:[],borderColor:'#4aa8ff',
+          backgroundColor:'rgba(74,168,255,.15)',tension:.25,pointRadius:0,fill:true}]},
+    options:{animation:false,responsive:true,maintainAspectRatio:false,
+      scales:{y:{min:20,max:55,grid:{color:'#2c3a48'},ticks:{color:'#8b9bb0'}},
+              x:{grid:{display:false},ticks:{color:'#8b9bb0',maxTicksLimit:8,font:{size:10}}}},
+      plugins:{legend:{display:false}}}});
+}
+function resetTs(){tsData=[];tsKey=tsSel.value;tsChart.data.labels=[];tsChart.data.datasets[0].data=[];tsChart.update();}
+
+// ---------- CN0 bar: system filter ----------
+const SYS_NAME={C:'北斗',G:'GPS',E:'Galileo',R:'GLONASS',J:'QZSS',S:'SBAS',I:'IRNSS'};
+let barSys='all';
+function setBarSys(s){barSys=s;
+  document.querySelectorAll('#barTabs button').forEach(b=>b.classList.toggle('on',b.dataset.sys===s));
+  if(window.__lastData)render(window.__lastData);   // re-render with current snapshot
+}
+function buildBarTabs(systems){
+  const keys=Object.keys(systems||{}).sort();
+  const sig=keys.map(k=>k+systems[k]).join(',');
+  const tabs=document.getElementById('barTabs');
+  if(tabs.dataset.sig===sig)return;                 // unchanged -> skip rebuild
+  tabs.dataset.sig=sig;
+  if(!keys.includes(barSys))barSys=keys.length>1?'all':(keys[0]||'all');
+  let total=keys.reduce((a,k)=>a+systems[k],0);
+  let h=`<button data-sys="all" class="${barSys==='all'?'on':''}" onclick="setBarSys('all')">全部 <span class="cnt">${total}</span></button>`;
+  keys.forEach(k=>{ h+=`<button data-sys="${k}" class="${barSys===k?'on':''}" onclick="setBarSys('${k}')">`+
+    `<span class="dot" style="background:${SYS_COLOR[k]||'#8b9bb0'}"></span>${SYS_NAME[k]||k} <span class="cnt">${systems[k]}</span></button>`;});
+  tabs.innerHTML=h;
+}
+
+// ---------- render ----------
+function render(d){
+  window.__lastData=d;                 // keep latest snapshot for filter re-render
+  // header / state
+  const st=d.status||{}; const pill=document.getElementById('statePill');
+  pill.textContent=st.msg||'未连接';
+  const streaming=st.state==='streaming', errored=st.state==='error';
+  pill.className='pill'+(streaming?' live':(errored?' err':''));
+  const ld=document.getElementById('liveDot');
+  ld.className='live-dot'+(streaming?' on':(errored?' err':''));
+  // source summary line
+  const sd=document.getElementById('srcDot');
+  sd.className='live-dot'+(streaming?' on':(errored?' err':''));
+  document.getElementById('srcSummaryTxt').textContent=st.msg||'未连接';
+
+  // KPIs
+  sStation.textContent=d.stats.station??'–';
+  sTime.textContent=d.stats.tow_ms!=null?(d.stats.tow_ms/1000).toFixed(0):'–';
+  sSats.textContent=d.stats.sats; sSig.textContent=d.stats.signals; sRate.textContent=d.stats.msg_rate;
+  const kb=(d.stats.bytes_in||0); const kbs=kb>1024?(kb/1024).toFixed(0)+'K':kb;
+  sBytes.textContent=kbs+'/'+(d.stats.frames||0);
+
+  // ephemeris summary
+  const ep=d.eph||{};
+  if(ep.state||ep.bytes_in){
+    const bs=ep.bytes_in>1024?(ep.bytes_in/1024).toFixed(0)+'K':(ep.bytes_in||0);
+    const sysstr=Object.entries(ep.by_sys||{}).map(([k,v])=>k+v).join(' ')||'—';
+    ephStat.textContent=`已收 ${bs}B · 报文 ${ep.msg_count} · 星历卫星 ${ep.sats} (${sysstr}) · 基准站 ${ep.base_known?'已知':'未知'}`;
+  } else ephStat.textContent='未连接';
+
+  const sats=d.sats;
+  // ----- collect signals present -----
+  const sigSet=new Set();
+  sats.forEach(s=>s.signals.forEach(g=>sigSet.add(g.signal)));
+  const sigs=SIG_ORDER.filter(s=>sigSet.has(s)).concat([...sigSet].filter(s=>!SIG_ORDER.includes(s)));
+
+  // ----- bar chart (with per-system filter + horizontal scroll) -----
+  buildBarTabs(d.systems);
+  const barSats = (barSys==='all') ? sats : sats.filter(s=>s.sys===barSys);
+  // signal columns limited to the filtered set -> no empty datasets cluttering the legend
+  const bSet=new Set(); barSats.forEach(s=>s.signals.forEach(g=>bSet.add(g.signal)));
+  const bSigs=SIG_ORDER.filter(s=>bSet.has(s)).concat([...bSet].filter(s=>!SIG_ORDER.includes(s)));
+  barChart.data.labels=barSats.map(s=>s.sat);
+  barChart.data.datasets=bSigs.map(sig=>({label:sig,backgroundColor:sigColor(sig),
+    minBarLength:3,                                   // weak signals stay visible (not zero-height)
+    data:barSats.map(s=>{const g=s.signals.find(x=>x.signal===sig);return g&&g.cn0?g.cn0:null;})}));
+  // keep each satellite group at least ~26px wide; otherwise bars become needles
+  const inner=document.getElementById('barInner');
+  const wantW=Math.max(inner.parentElement.clientWidth, barSats.length*26+60);
+  inner.style.width=wantW+'px';
+  barChart.resize();
+  barChart.update();
+  const bn=document.getElementById('barNote');
+  if(bn)bn.textContent=`当前显示 ${barSats.length} 颗星 / ${bSigs.length} 个信号类型`+
+    (wantW>inner.parentElement.clientWidth?' · 可横向滚动查看全部':'')+
+    ' · 鼠标移到某颗星垂直区间即弹出全部信号读数。';
+
+  // ----- matrix (heatmap) -----
+  let h='<tr><th>卫星</th><th>系统</th>'+sigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
+  sats.forEach(s=>{
+    let rc=''; let badge='';
+    if(s.recon){
+      if(s.recon.sys==='BDS-2')badge='<span class="badge b2">BDS-2</span>';
+      else if(s.recon.sys==='BDS-3')badge='<span class="badge b3">BDS-3</span>';
+      const lv=s.recon.anomalies.map(a=>a.level);
+      if(lv.includes('error'))rc='brow-err'; else if(lv.includes('warn'))rc='brow-warn';
+    }
+    h+=`<tr class="${rc}"><td class="sat">${s.sat}</td><td>${(s.recon?s.recon.orbit:'')}${badge}</td>`;
+    sigs.forEach(sig=>{const g=s.signals.find(x=>x.signal===sig);
+      if(g&&g.cn0){
+        const crit=g.cn0<25?' cn0-crit':'';
+        h+=`<td class="cn0${crit}" style="background:${cn0Color(g.cn0)};color:#06121f;font-weight:600" title="${g.code} · ${g.freq_mhz} MHz">${g.cn0}</td>`;
+      } else h+='<td style="color:#5f6b7a">-</td>';});
+    h+='</tr>';
+  });
+  document.getElementById('matrix').innerHTML=h;
+
+  // ----- anomalies: aggregate satellites by (level,msg) into tag boxes -----
+  const groups=new Map();   // msg -> {level,msg,sats:[]}
+  sats.forEach(s=>{ if(!s.recon)return;
+    s.recon.anomalies.forEach(an=>{
+      if(!groups.has(an.msg))groups.set(an.msg,{level:an.level,msg:an.msg,sats:[]});
+      groups.get(an.msg).sats.push(s.sat);
+    });
+  });
+  const order={error:0,warn:1,info:2};
+  const glist=[...groups.values()].sort((a,b)=>order[a.level]-order[b.level]);
+  const ICON={error:'🔴',warn:'🟡',info:'⚪'};
+  const ae=document.getElementById('anoms');
+  if(!glist.length){
+    const anyBds=sats.some(s=>s.recon);
+    ae.innerHTML=`<div class="anombox ok"><div class="ah">✓ ${anyBds?'所有北斗卫星信号与 2026/04 重构计划一致':'暂无北斗卫星数据'}</div></div>`;
+  } else {
+    ae.innerHTML=glist.map(g=>{
+      const tags=g.sats.map(s=>`<span class="atag">${s}</span>`).join('');
+      return `<div class="anombox ${g.level}"><div class="ah">${ICON[g.level]||''} ${g.msg}`+
+             `<span style="margin-left:auto;font-weight:400;opacity:.8">${g.sats.length} 颗</span></div>`+
+             `<div class="atags">${tags}</div></div>`;
+    }).join('');
+  }
+
+  // ----- skyplot -----
+  drawSky(sats);
+
+  // ----- time-series selector -----
+  const keys=[]; sats.forEach(s=>s.signals.forEach(g=>keys.push(s.sat+'·'+g.signal)));
+  const cur=tsSel.value;
+  if(tsSel.dataset.keys!==keys.join(',')){
+    tsSel.innerHTML='<option value="">— 选择 卫星·信号 —</option>'+
+      keys.map(k=>`<option ${k===cur?'selected':''}>${k}</option>`).join('');
+    tsSel.dataset.keys=keys.join(',');
+  }
+  if(tsKey){
+    const [sat,sig]=tsKey.split('·'); const s=sats.find(x=>x.sat===sat);
+    const g=s&&s.signals.find(x=>x.signal===sig); const v=g?g.cn0:null;
+    const lbl=new Date().toLocaleTimeString();
+    tsData.push({t:lbl,v}); if(tsData.length>120)tsData.shift();
+    tsChart.data.labels=tsData.map(p=>p.t);
+    tsChart.data.datasets[0].data=tsData.map(p=>p.v);
+    tsChart.data.datasets[0].borderColor=sigColor(sig);
+    tsChart.update();
+  }
+  if(tsSel.value!==tsKey)tsKey=tsSel.value;
+
+  // ----- legend + freq table -----
+  const seen=new Map();
+  sats.forEach(s=>s.signals.forEach(g=>{if(!seen.has(g.signal))seen.set(g.signal,g.freq_mhz);}));
+  document.getElementById('legend').innerHTML=[...seen.keys()].sort((a,b)=>SIG_ORDER.indexOf(a)-SIG_ORDER.indexOf(b))
+    .map(s=>`<span class="it"><span class="sw" style="background:${sigColor(s)}"></span>${s}</span>`).join('');
+  let ft='<tr><th>信号</th><th>频率(MHz)</th><th>锁定数</th></tr>';
+  const cnt={}; sats.forEach(s=>s.signals.forEach(g=>cnt[g.signal]=(cnt[g.signal]||0)+1));
+  [...seen.entries()].sort((a,b)=>SIG_ORDER.indexOf(a[0])-SIG_ORDER.indexOf(b[0]))
+    .forEach(([s,f])=>ft+=`<tr><td><span class="sw" style="background:${sigColor(s)};margin-right:6px"></span>${s}</td><td>${f??'–'}</td><td>${cnt[s]||0}</td></tr>`);
+  document.getElementById('freqtab').innerHTML=ft;
+}
+
+function drawSky(sats){
+  const svg=document.getElementById('sky'); const cx=160,cy=160, R=150;
+  const hasAzEl=sats.some(s=>s.el!=null&&s.az!=null);
+  let g='<circle cx="160" cy="160" r="150" fill="#0f1419" stroke="#2c3a48"/>'+
+        '<circle cx="160" cy="160" r="100" fill="none" stroke="#2c3a48"/>'+
+        '<circle cx="160" cy="160" r="50" fill="none" stroke="#2c3a48"/>';
+  const note=document.getElementById('skyNote');
+  if(hasAzEl){
+    g+='<line x1="160" y1="10" x2="160" y2="310" stroke="#2c3a48"/>'+
+       '<line x1="10" y1="160" x2="310" y2="160" stroke="#2c3a48"/>'+
+       '<text x="160" y="22" fill="#8b9bb0" font-size="10" text-anchor="middle">N</text>'+
+       '<text x="304" y="164" fill="#8b9bb0" font-size="10" text-anchor="middle">E</text>'+
+       '<text x="160" y="306" fill="#8b9bb0" font-size="10" text-anchor="middle">S</text>'+
+       '<text x="16" y="164" fill="#8b9bb0" font-size="10" text-anchor="middle">W</text>'+
+       '<text x="168" y="110" fill="#5f6b7a" font-size="8">30°</text>'+
+       '<text x="168" y="60" fill="#5f6b7a" font-size="8">60°</text>';
+    sats.forEach(s=>{
+      if(s.el==null||s.az==null||s.el<0)return;
+      const r=R*(90-s.el)/90, a=s.az*Math.PI/180;
+      const x=cx+r*Math.sin(a), y=cy-r*Math.cos(a);
+      const cn0=s.maxcn0||25, rad=3+(Math.max(20,cn0)-20)*0.35;
+      const anom=s.recon&&s.recon.anomalies.some(a=>a.level!=='info');
+      g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${SYS_COLOR[s.sys]||'#8b9bb0'}" `+
+         `stroke="${anom?'#f85149':'#0f1419'}" stroke-width="${anom?2:1}"><title>${s.sat} az=${s.az}° el=${s.el}° CN0=${cn0}</title></circle>`+
+         `<text x="${x.toFixed(1)}" y="${(y-rad-2).toFixed(1)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${s.sat}</text>`;
+    });
+    if(note)note.textContent='真实方位/高度角（来自广播星历）。中心=天顶(90°)，外环=地平(0°)，正上=北。';
+  }else{
+    const bySys={}; sats.forEach(s=>{(bySys[s.sys]=bySys[s.sys]||[]).push(s);});
+    const syss=Object.keys(bySys); let base=0;
+    syss.forEach(sy=>{
+      const arr=bySys[sy]; const span=2*Math.PI/syss.length;
+      arr.forEach((s,i)=>{
+        const ang=base+span*(i+0.5)/arr.length - Math.PI/2;
+        const cn0=s.maxcn0||25; const r=Math.max(20,150-(cn0-20)*3.5);
+        const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r;
+        const rad=3+(Math.max(20,cn0)-20)*0.35;
+        const anom=s.recon&&s.recon.anomalies.some(a=>a.level!=='info');
+        g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${SYS_COLOR[sy]||'#8b9bb0'}" `+
+           `stroke="${anom?'#f85149':'#0f1419'}" stroke-width="${anom?2:1}"><title>${s.sat} CN0=${cn0}</title></circle>`+
+           `<text x="${x.toFixed(1)}" y="${(y-rad-2).toFixed(1)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${s.sat}</text>`;
+      });
+      base+=span;
+    });
+    if(note)note.textContent='接入广播星历流后显示真实方位/高度角；当前为按系统环形近似（中心=强信号）。';
+  }
+  svg.innerHTML=g;
+}
+
+// ---------- SSE ----------
+initCharts();
+let _last=null, _pending=null, _rafQueued=false;
+const MIN_MS=900;
+function schedule(d){
+  _pending=d;
+  if(_rafQueued)return; _rafQueued=true;
+  requestAnimationFrame(()=>{
+    _rafQueued=false;
+    if(document.hidden){return;}
+    const now=performance.now();
+    if(_last && now-_last<MIN_MS){
+      setTimeout(()=>{if(_pending)schedule(_pending);}, MIN_MS-(now-_last));
+      return;
+    }
+    _last=now; const d=_pending; _pending=null;
+    try{render(d);}catch(err){console.error(err);}
+  });
+}
+const es=new EventSource('/stream');
+es.onmessage=e=>{try{schedule(JSON.parse(e.data));}catch(err){console.error(err);}};
+es.onerror=()=>{document.getElementById('statePill').textContent='与后端断开';};
+</script>
+</body>
+</html>
