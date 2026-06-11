@@ -29,20 +29,25 @@
   .live-dot.on::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--ok);
         opacity:.6;animation:ping 1.4s cubic-bezier(0,0,.2,1) infinite}
   .live-dot.err i{background:var(--err)}
+  .live-dot.idle i{background:var(--err);animation:dotblink 1.6s ease-in-out infinite}
   @keyframes ping{75%,100%{transform:scale(2.4);opacity:0}}
+  @keyframes dotblink{50%{opacity:.25}}
   .pill{padding:3px 10px;border-radius:20px;font-size:12px;background:var(--card2);color:var(--mut)}
   .pill.live{background:rgba(63,185,80,.15);color:var(--ok)}
   .pill.err{background:rgba(248,81,73,.15);color:var(--err)}
+  .pill.idle{background:rgba(248,81,73,.10);color:#e08a85}
 
   /* ---------- KPI strip ---------- */
   .kpis{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
-  .kpi{display:flex;align-items:center;gap:9px;background:var(--card2);border:1px solid var(--line);
-       border-radius:8px;padding:6px 12px;min-width:96px}
+  .kpi{display:flex;align-items:center;gap:9px;background:linear-gradient(145deg,var(--card2),var(--card3));
+       border:1px solid var(--line);border-radius:8px;padding:7px 13px;min-width:100px;
+       box-shadow:0 3px 10px rgba(0,0,0,.25)}
   .kpi .kic{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;
-            background:var(--card3);flex:none}
+            background:rgba(0,0,0,.25);flex:none}
   .kpi .kv{display:flex;flex-direction:column;line-height:1.15}
-  .kpi .kv b{font-size:15px;font-weight:700}
+  .kpi .kv b{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}
   .kpi .kv span{color:var(--mut);font-size:10.5px}
+  .kpi.dim b{color:var(--mut)}
   .kpi.acc .kic{color:var(--acc)} .kpi.acc b{color:var(--acc)}
   .kpi.purple .kic{color:var(--purple)} .kpi.purple b{color:var(--purple)}
   .kpi.ok .kic{color:var(--ok)} .kpi.ok b{color:var(--ok)}
@@ -52,7 +57,7 @@
   main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:12px;padding:12px;align-items:start}
   .col{display:flex;flex-direction:column;gap:12px;min-width:0}
   .grid2{display:grid;grid-template-columns:2fr 1fr;gap:12px;min-width:0}
-  .grid-ts{display:grid;grid-template-columns:1fr 1fr;gap:12px;min-width:0}
+  .grid-ts{display:grid;grid-template-columns:3fr 2fr;gap:12px;min-width:0;align-items:start}
   @media(max-width:1100px){
     main{grid-template-columns:1fr}
     .grid2,.grid-ts{grid-template-columns:1fr}
@@ -134,6 +139,21 @@
   select.sel{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 8px}
   canvas{max-width:100%}
   .freqtab td{text-align:left}
+
+  /* ---------- realtime event log ---------- */
+  .logpanel{background:#0a0e13;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:12px;line-height:1.65;
+    height:230px;overflow-y:auto;color:var(--mut);margin-top:10px}
+  .log-item{white-space:pre-wrap;word-break:break-all}
+  .log-item .lt{color:#5f6b7a;margin-right:8px}
+  .log-item.error{color:var(--err)}
+  .log-item.warn{color:var(--warn)}
+  .log-item.success{color:#56d364}
+  .log-item.info{color:#9fb3c8}
+
+  /* ---------- matrix empty state ---------- */
+  .mat-empty{padding:48px 0;text-align:center;color:var(--mut);opacity:.55;font-size:13px;
+    letter-spacing:.5px}
 </style>
 </head>
 <body>
@@ -157,6 +177,10 @@
     <div class="kpi purple">
       <span class="kic"><svg class="ic" viewBox="0 0 24 24"><path d="M4.9 19.1A10 10 0 0 1 4.9 4.9M7.8 16.2a6 6 0 0 1 0-8.5M16.2 7.8a6 6 0 0 1 0 8.5M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2"/></svg></span>
       <span class="kv"><b id="sSig">0</b><span>信号数</span></span>
+    </div>
+    <div class="kpi ok">
+      <span class="kic"><svg class="ic" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></span>
+      <span class="kv"><b id="sMulti">0</b><span>双频+卫星</span></span>
     </div>
     <div class="kpi ok">
       <span class="kic"><svg class="ic" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
@@ -277,21 +301,22 @@
     </section>
 
     <div class="grid-ts">
-      <!-- time series -->
+      <!-- realtime event log (replaces CN0 time series) -->
       <section class="card">
         <div class="bd">
-          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg> CN0 时间序列</h2>
-          <div class="row" style="margin-top:8px">
-            <select id="tsSel" class="sel" onchange="resetTs()" style="flex:1"></select>
-          </div>
-          <div style="position:relative;height:190px"><canvas id="tsChart"></canvas></div>
+          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+            实时解析与事件日志 <span class="tag">连接状态 · 报文类型 · 卫星增失 · 北斗重构异常</span></h2>
+          <div class="logpanel" id="logPanel"><div class="log-item">等待事件 · 连接数据源后此处实时滚动显示</div></div>
         </div>
       </section>
-      <!-- frequency legend -->
+      <!-- frequency legend (collapsible) -->
       <section class="card">
-        <div class="bd">
+        <div class="chead" onclick="toggleCard('legendBody',this)">
           <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--purple)"><path d="M2 12h4l3-9 6 18 3-9h4"/></svg> 频点 / 信号图例</h2>
-          <div class="legend" id="legend" style="margin-top:10px"></div>
+          <svg class="ic chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="cbody" id="legendBody">
+          <div class="legend" id="legend"></div>
           <table class="freqtab" id="freqtab" style="margin-top:10px"></table>
         </div>
       </section>
@@ -356,7 +381,7 @@ async function connectEph(){
 async function disconnectEph(){await fetch('/api/disconnect_eph',{method:'POST'});}
 
 // ---------- charts ----------
-let barChart, tsChart, tsData=[], tsKey=null;
+let barChart;
 function initCharts(){
   barChart=new Chart(document.getElementById('barChart'),{type:'bar',
     data:{labels:[],datasets:[]},
@@ -370,15 +395,23 @@ function initCharts(){
         tooltip:{itemSort:(a,b)=>b.parsed.y-a.parsed.y,
           callbacks:{title:it=>it.length?('卫星 '+it[0].label):'',
                      label:c=>c.parsed.y!=null?` ${c.dataset.label}: ${c.parsed.y} dB-Hz`:null}}}}});
-  tsChart=new Chart(document.getElementById('tsChart'),{type:'line',
-    data:{labels:[],datasets:[{label:'CN0',data:[],borderColor:'#4aa8ff',
-          backgroundColor:'rgba(74,168,255,.15)',tension:.25,pointRadius:0,fill:true}]},
-    options:{animation:false,responsive:true,maintainAspectRatio:false,
-      scales:{y:{min:20,max:55,grid:{color:'#2c3a48'},ticks:{color:'#8b9bb0'}},
-              x:{grid:{display:false},ticks:{color:'#8b9bb0',maxTicksLimit:8,font:{size:10}}}},
-      plugins:{legend:{display:false}}}});
 }
-function resetTs(){tsData=[];tsKey=tsSel.value;tsChart.data.labels=[];tsChart.data.datasets[0].data=[];tsChart.update();}
+
+// ---------- realtime event log ----------
+function escHtml(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function renderLog(events){
+  const el=document.getElementById('logPanel');
+  if(!el||!Array.isArray(events))return;
+  const sig=events.length?(events[events.length-1].ts+':'+events.length):'0';
+  if(el.dataset.sig===sig)return;                    // unchanged -> skip rebuild
+  el.dataset.sig=sig;
+  const atBottom=el.scrollHeight-el.scrollTop-el.clientHeight<40;
+  el.innerHTML=events.length?events.map(e=>{
+    const t=new Date(e.ts*1000).toLocaleTimeString('zh-CN',{hour12:false});
+    return `<div class="log-item ${e.level||'info'}"><span class="lt">${t}</span>${escHtml(e.msg)}</div>`;
+  }).join(''):'<div class="log-item">等待事件 · 连接数据源后此处实时滚动显示</div>';
+  if(atBottom)el.scrollTop=el.scrollHeight;          // 用户上翻查看历史时不强制跳底
+}
 
 // ---------- CN0 bar: system filter ----------
 const SYS_NAME={C:'北斗',G:'GPS',E:'Galileo',R:'GLONASS',J:'QZSS',S:'SBAS',I:'IRNSS'};
@@ -408,20 +441,24 @@ function render(d){
   const st=d.status||{}; const pill=document.getElementById('statePill');
   pill.textContent=st.msg||'未连接';
   const streaming=st.state==='streaming', errored=(st.state==='error'||st.state==='reconnecting');
-  pill.className='pill'+(streaming?' live':(errored?' err':''));
+  const offline=(st.state==='idle'||st.state==='stopped');
+  const dotCls=streaming?' on':(errored?' err':(offline?' idle':''));
+  pill.className='pill'+(streaming?' live':(errored?' err':(offline?' idle':'')));
   const ld=document.getElementById('liveDot');
-  ld.className='live-dot'+(streaming?' on':(errored?' err':''));
+  ld.className='live-dot'+dotCls;
   // source summary line
   const sd=document.getElementById('srcDot');
-  sd.className='live-dot'+(streaming?' on':(errored?' err':''));
+  sd.className='live-dot'+dotCls;
   document.getElementById('srcSummaryTxt').textContent=st.msg||'未连接';
 
-  // KPIs
+  // KPIs (dim numbers when no live data)
   sStation.textContent=d.stats.station??'–';
   sTime.textContent=d.stats.tow_ms!=null?(d.stats.tow_ms/1000).toFixed(0):'–';
   sSats.textContent=d.stats.sats; sSig.textContent=d.stats.signals; sRate.textContent=d.stats.msg_rate;
+  sMulti.textContent=(d.stats.multi_freq??0)+'/'+d.stats.sats;
   const kb=(d.stats.bytes_in||0); const kbs=kb>1024?(kb/1024).toFixed(0)+'K':kb;
   sBytes.textContent=kbs+'/'+(d.stats.frames||0);
+  document.querySelectorAll('.kpi').forEach(k=>k.classList.toggle('dim',!streaming));
 
   // ephemeris summary
   const ep=d.eph||{};
@@ -478,6 +515,8 @@ function render(d){
       } else h+='<td style="color:#5f6b7a">-</td>';});
     h+='</tr>';
   });
+  if(!sats.length)
+    h+=`<tr><td colspan="${sigs.length+2}" style="border:none"><div class="mat-empty">⚙ 等待接入 NTRIP 数据源…</div></td></tr>`;
   document.getElementById('matrix').innerHTML=h;
 
   // ----- anomalies: aggregate satellites by (level,msg) into tag boxes -----
@@ -507,25 +546,8 @@ function render(d){
   // ----- skyplot -----
   drawSky(sats);
 
-  // ----- time-series selector -----
-  const keys=[]; sats.forEach(s=>s.signals.forEach(g=>keys.push(s.sat+'·'+g.signal)));
-  const cur=tsSel.value;
-  if(tsSel.dataset.keys!==keys.join(',')){
-    tsSel.innerHTML='<option value="">— 选择 卫星·信号 —</option>'+
-      keys.map(k=>`<option ${k===cur?'selected':''}>${k}</option>`).join('');
-    tsSel.dataset.keys=keys.join(',');
-  }
-  if(tsKey){
-    const [sat,sig]=tsKey.split('·'); const s=sats.find(x=>x.sat===sat);
-    const g=s&&s.signals.find(x=>x.signal===sig); const v=g?g.cn0:null;
-    const lbl=new Date().toLocaleTimeString();
-    tsData.push({t:lbl,v}); if(tsData.length>120)tsData.shift();
-    tsChart.data.labels=tsData.map(p=>p.t);
-    tsChart.data.datasets[0].data=tsData.map(p=>p.v);
-    tsChart.data.datasets[0].borderColor=sigColor(sig);
-    tsChart.update();
-  }
-  if(tsSel.value!==tsKey)tsKey=tsSel.value;
+  // ----- realtime event log -----
+  renderLog(d.events||[]);
 
   // ----- legend + freq table -----
   const seen=new Map();
