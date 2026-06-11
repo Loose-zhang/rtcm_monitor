@@ -507,7 +507,9 @@ function render(d){
       const lv=s.recon.anomalies.map(a=>a.level);
       if(lv.includes('error'))rc='brow-err'; else if(lv.includes('warn'))rc='brow-warn';
     }
-    h+=`<tr class="${rc}"><td class="sat">${s.sat}</td><td>${(s.recon?s.recon.orbit:'')}${badge}</td>`;
+    const sysn=SYS_NAME[s.sys]||s.sys||'–';
+    const sdot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${SYS_COLOR[s.sys]||'#8b9bb0'}"></span>`;
+    h+=`<tr class="${rc}"><td class="sat">${s.sat}</td><td style="text-align:left;white-space:nowrap">${sdot}${sysn}${s.recon?' '+s.recon.orbit:''}${badge}</td>`;
     sigs.forEach(sig=>{const g=s.signals.find(x=>x.signal===sig);
       if(g&&g.cn0){
         const crit=g.cn0<25?' cn0-crit':'';
