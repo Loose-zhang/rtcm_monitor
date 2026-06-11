@@ -41,6 +41,7 @@ class State:
         self.eph_source = None
         self.eph = {}                # sat -> normalized eph (+ 'ts')
         self.eph_msg_count = 0
+        self.eph_status = {"state": "idle", "msg": "未连接"}
         self.base_xyz = None         # base ECEF from 1005, for az/el
 
     # ---- called from source thread, per validated frame
@@ -90,6 +91,10 @@ class State:
     def on_status(self, st):
         with self.lock:
             self.status = st
+
+    def on_eph_status(self, st):
+        with self.lock:
+            self.eph_status = st
 
     # ---- snapshot for the browser
     def snapshot(self):
@@ -156,6 +161,7 @@ class State:
                 "eph": {
                     "state": (self.eph_source.__class__.__name__
                               if self.eph_source else None),
+                    "conn": self.eph_status,
                     "status": getattr(self.eph_source, "resp", "") if self.eph_source else "",
                     "msg_count": self.eph_msg_count,
                     "bytes_in": getattr(self.eph_source, "bytes_in", 0) if self.eph_source else 0,
@@ -248,7 +254,7 @@ def api_connect_eph():
             from ntrip_source import NtripSource
             src = NtripSource(cfg["host"], cfg["port"], cfg["mountpoint"],
                               cfg.get("user", ""), cfg.get("password", ""),
-                              STATE.on_frame, lambda s: None,
+                              STATE.on_frame, STATE.on_eph_status,
                               gga=cfg.get("gga", ""))
         STATE.start_eph(src)
         return {"ok": True}

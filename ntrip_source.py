@@ -18,14 +18,14 @@ class _BaseSource(threading.Thread):
         super().__init__(daemon=True)
         self.on_frame = on_frame
         self.on_status = on_status
-        self._stop = threading.Event()
+        self._stop_evt = threading.Event()
         self.framer = RtcmFramer()
         self.bytes_in = 0
         self.frames = 0
         self.resp = ""
 
     def stop(self):
-        self._stop.set()
+        self._stop_evt.set()
 
     def _emit(self, chunk):
         self.bytes_in += len(chunk)
@@ -115,7 +115,41 @@ class NtripSource(_BaseSource):
             f"Connection: close\r\n\r\n"
         ).encode()
 
+    # 设备可能周期性休眠(如每10分钟休眠1-4分钟)导致链路中断，
+    # 因此连接断开/出错/长时间无数据时自动重连，仅手动停止时退出。
+    RECONNECT_MIN = 30       # 首次重连等待(秒)，设备休眠一般1-4分钟，无需频繁重试
+    RECONNECT_MAX = 60       # 重连等待上限(秒)
+    IDLE_RECONNECT = 90      # 连续无数据超过此秒数则强制重连
+
     def run(self):
+        delay = self.RECONNECT_MIN
+        attempt = 0
+        while not self._stop_evt.is_set():
+            err = ""
+            self._got_data = False
+            try:
+                self._stream_once()
+            except Exception as e:
+                err = str(e)
+                print(f"[NTRIP] error: {e}")
+            if self._got_data:
+                delay = self.RECONNECT_MIN         # 上次连接正常收过数据，重置退避
+            if self._stop_evt.is_set():
+                break
+            attempt += 1
+            self.on_status({"state": "reconnecting",
+                            "msg": f"连接中断({err or '流结束'})，"
+                                   f"{delay}秒后自动重连(第{attempt}次)…"})
+            print(f"[NTRIP] reconnect in {delay}s (attempt {attempt})")
+            if self._stop_evt.wait(delay):
+                break
+            delay = min(delay * 2, self.RECONNECT_MAX)
+        self.on_status({"state": "stopped", "msg": "已停止"})
+
+    def _stream_once(self):
+        """Connect and stream until error/stop. Sets self._got_data on any data."""
+        sock = None
+        self.framer = RtcmFramer()                 # 丢弃上次连接的半帧残留
         try:
             self.on_status({"state": "connecting",
                             "msg": f"连接 {self.host}:{self.port}/{self.mountpoint}"})
@@ -161,6 +195,7 @@ class NtripSource(_BaseSource):
             def push(raw):
                 payload = dec.feed(raw) if dec else raw
                 if payload:
+                    self._got_data = True
                     self._emit(payload)
 
             # VRS mounts need an NMEA GGA before they stream
@@ -175,11 +210,16 @@ class NtripSource(_BaseSource):
                             "msg": f"已连接 {self.mountpoint}"})
 
             last_gga = time.time()
+            last_data = time.time()
             last_log = 0
-            while not self._stop.is_set():
+            while not self._stop_evt.is_set():
                 try:
                     ch = sock.recv(4096)
                 except socket.timeout:
+                    idle = time.time() - last_data
+                    if idle > self.IDLE_RECONNECT:
+                        raise ConnectionError(
+                            f"{int(idle)}秒无数据(设备可能休眠)") from None
                     self.on_status({"state": "streaming",
                                     "msg": f"{self.mountpoint} · 等待数据… "
                                            f"已收 {self.bytes_in}B / {self.frames}帧"})
@@ -193,6 +233,7 @@ class NtripSource(_BaseSource):
                     raise ConnectionError("caster 断开连接")
                 push(ch)
                 now = time.time()
+                last_data = now
                 if self.gga and now - last_gga > 10:
                     try:
                         sock.sendall((self.gga + "\r\n").encode())
@@ -202,11 +243,12 @@ class NtripSource(_BaseSource):
                 if now - last_log > 3:
                     print(f"[NTRIP] bytes={self.bytes_in} frames={self.frames}")
                     last_log = now
-            sock.close()
-            self.on_status({"state": "stopped", "msg": "已停止"})
-        except Exception as e:
-            print(f"[NTRIP] error: {e}")
-            self.on_status({"state": "error", "msg": f"NTRIP 错误: {e}"})
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
 
 
 class FileSource(_BaseSource):
@@ -220,12 +262,12 @@ class FileSource(_BaseSource):
     def run(self):
         try:
             self.on_status({"state": "streaming", "msg": f"回放文件 {self.path}"})
-            while not self._stop.is_set():
+            while not self._stop_evt.is_set():
                 with open(self.path, "rb") as fh:
                     data = fh.read()
                 step = 1024
                 for i in range(0, len(data), step):
-                    if self._stop.is_set():
+                    if self._stop_evt.is_set():
                         break
                     self._emit(data[i:i + step])
                     if self.speed > 0:

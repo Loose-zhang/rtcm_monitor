@@ -407,7 +407,7 @@ function render(d){
   // header / state
   const st=d.status||{}; const pill=document.getElementById('statePill');
   pill.textContent=st.msg||'未连接';
-  const streaming=st.state==='streaming', errored=st.state==='error';
+  const streaming=st.state==='streaming', errored=(st.state==='error'||st.state==='reconnecting');
   pill.className='pill'+(streaming?' live':(errored?' err':''));
   const ld=document.getElementById('liveDot');
   ld.className='live-dot'+(streaming?' on':(errored?' err':''));
@@ -425,11 +425,13 @@ function render(d){
 
   // ephemeris summary
   const ep=d.eph||{};
-  if(ep.state||ep.bytes_in){
+  const ec=ep.conn||{};
+  if(ep.state){
     const bs=ep.bytes_in>1024?(ep.bytes_in/1024).toFixed(0)+'K':(ep.bytes_in||0);
     const sysstr=Object.entries(ep.by_sys||{}).map(([k,v])=>k+v).join(' ')||'—';
-    ephStat.textContent=`已收 ${bs}B · 报文 ${ep.msg_count} · 星历卫星 ${ep.sats} (${sysstr}) · 基准站 ${ep.base_known?'已知':'未知'}`;
-  } else ephStat.textContent='未连接';
+    ephStat.textContent=`[${ec.msg||ec.state||''}] 已收 ${bs}B · 报文 ${ep.msg_count} · 星历卫星 ${ep.sats} (${sysstr}) · 基准站 ${ep.base_known?'已知':'未知'}`;
+    ephStat.style.color = ec.state==='error' ? 'var(--err)' : (ep.msg_count>0?'var(--ok)':'var(--mut)');
+  } else { ephStat.textContent=ec.msg||'未连接'; ephStat.style.color='var(--mut)'; }
 
   const sats=d.sats;
   // ----- collect signals present -----
