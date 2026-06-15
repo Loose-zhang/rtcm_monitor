@@ -297,7 +297,58 @@ class State:
             self.eph_source = None
 
 
-STATE = State()
+class SessionManager:
+    """Per-browser/device isolation: each session id owns its own State
+    (its own NTRIP/ephemeris connection, satellites, events …) so that
+    opening the page on different devices no longer shares one global state."""
+
+    IDLE_SEC = 90.0          # reclaim a session this long after its last /stream poll
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.states = {}     # sid -> State
+        self.seen = {}       # sid -> last activity ts
+
+    def get(self, sid):
+        sid = sid or "default"
+        with self.lock:
+            st = self.states.get(sid)
+            if st is None:
+                st = State()
+                self.states[sid] = st
+            self.seen[sid] = time.time()
+            return st
+
+    def touch(self, sid):
+        with self.lock:
+            if (sid or "default") in self.states:
+                self.seen[sid or "default"] = time.time()
+
+    def reap(self):
+        """Stop sources and drop sessions whose browser has gone away."""
+        while True:
+            time.sleep(30.0)
+            now = time.time()
+            with self.lock:
+                dead = [s for s, t in self.seen.items()
+                        if now - t > self.IDLE_SEC]
+                victims = [(s, self.states.pop(s, None)) for s in dead]
+                for s in dead:
+                    self.seen.pop(s, None)
+            for _sid, st in victims:
+                if st:
+                    try:
+                        st.stop()
+                        st.stop_eph()
+                    except Exception:
+                        pass
+
+
+MANAGER = SessionManager()
+
+
+def _sid_from_body(cfg):
+    return cfg.get("sid") or request.args.get("sid")
 
 
 # ----------------------------------------------------------------- routes
@@ -309,20 +360,21 @@ def index():
 @app.route("/api/connect", methods=["POST"])
 def api_connect():
     cfg = request.get_json(force=True)
+    state = MANAGER.get(_sid_from_body(cfg))
     mode = cfg.get("mode", "ntrip")
     try:
         if mode == "file":
             from ntrip_source import FileSource
-            src = FileSource(cfg["path"], STATE.on_frame, STATE.on_status,
+            src = FileSource(cfg["path"], state.on_frame, state.on_status,
                              speed=float(cfg.get("speed", 1.0)),
                              loop=bool(cfg.get("loop", True)))
         else:
             from ntrip_source import NtripSource
             src = NtripSource(cfg["host"], cfg["port"], cfg["mountpoint"],
                               cfg.get("user", ""), cfg.get("password", ""),
-                              STATE.on_frame, STATE.on_status,
+                              state.on_frame, state.on_status,
                               gga=cfg.get("gga", ""))
-        STATE.start(src)
+        state.start(src)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}, 400
@@ -330,26 +382,28 @@ def api_connect():
 
 @app.route("/api/disconnect", methods=["POST"])
 def api_disconnect():
-    STATE.stop()
+    cfg = request.get_json(silent=True) or {}
+    MANAGER.get(_sid_from_body(cfg)).stop()
     return {"ok": True}
 
 
 @app.route("/api/connect_eph", methods=["POST"])
 def api_connect_eph():
     cfg = request.get_json(force=True)
+    state = MANAGER.get(_sid_from_body(cfg))
     try:
         if cfg.get("mode") == "file":
             from ntrip_source import FileSource
-            src = FileSource(cfg["path"], STATE.on_frame, lambda s: None,
+            src = FileSource(cfg["path"], state.on_frame, lambda s: None,
                              speed=float(cfg.get("speed", 1.0)),
                              loop=bool(cfg.get("loop", True)))
         else:
             from ntrip_source import NtripSource
             src = NtripSource(cfg["host"], cfg["port"], cfg["mountpoint"],
                               cfg.get("user", ""), cfg.get("password", ""),
-                              STATE.on_frame, STATE.on_eph_status,
+                              state.on_frame, state.on_eph_status,
                               gga=cfg.get("gga", ""))
-        STATE.start_eph(src)
+        state.start_eph(src)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}, 400
@@ -357,15 +411,20 @@ def api_connect_eph():
 
 @app.route("/api/disconnect_eph", methods=["POST"])
 def api_disconnect_eph():
-    STATE.stop_eph()
+    cfg = request.get_json(silent=True) or {}
+    MANAGER.get(_sid_from_body(cfg)).stop_eph()
     return {"ok": True}
 
 
 @app.route("/stream")
 def stream():
+    sid = request.args.get("sid")
+    state = MANAGER.get(sid)
+
     def gen():
         while True:
-            payload = json.dumps(STATE.snapshot(), ensure_ascii=False)
+            MANAGER.touch(sid)
+            payload = json.dumps(state.snapshot(), ensure_ascii=False)
             yield f"data: {payload}\n\n"
             time.sleep(1.0)
     return Response(gen(), mimetype="text/event-stream",
@@ -383,4 +442,5 @@ if __name__ == "__main__":
     print(f"RTCM Monitor  ->  http://{shown}:{args.port}")
     if args.host == "0.0.0.0":
         print("注意: 已对外监听 0.0.0.0，请用防火墙限制来源 IP。")
+    threading.Thread(target=MANAGER.reap, daemon=True).start()
     app.run(host=args.host, port=args.port, threaded=True)
