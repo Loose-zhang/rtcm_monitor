@@ -126,6 +126,9 @@
   td.sat{font-weight:600;text-align:left;position:sticky;left:0;background:var(--card);z-index:1}
   .matwrap{max-height:380px;overflow:auto;border:1px solid var(--line);border-radius:8px}
   .badge{font-size:10px;padding:1px 6px;border-radius:10px;margin-left:4px}
+  .rtag{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:600;white-space:nowrap}
+  .rtag.base{background:rgba(74,168,255,.16);color:#7cc1ff;border:1px solid rgba(74,168,255,.4)}
+  .rtag.rover{background:rgba(255,166,87,.16);color:#ffb877;border:1px solid rgba(255,166,87,.45)}
   .b2{background:rgba(74,168,255,.18);color:var(--acc)}
   .b3{background:rgba(63,185,80,.16);color:var(--ok)}
   .brow-err{outline:2px solid var(--err);outline-offset:-2px}
@@ -204,7 +207,7 @@
     <!-- data source -->
     <section class="card">
       <div class="chead collapsed" onclick="toggleCard('srcBody',this)">
-        <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> NTRIP 数据源</h2>
+        <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> 基站 NTRIP 数据源</h2>
         <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
       </div>
       <div id="srcBody" class="cbody hidden">
@@ -226,9 +229,39 @@
             <button id="btnDisc" class="ghost" onclick="disconnect()" disabled>断开</button>
           </div>
         </div>
-        <div class="note">凭据只发送到本机后端再转发给 caster，不写入磁盘。NTRIP 需在能访问该 caster 的网络环境下运行。</div>
+        <div class="note">基站(base)通道 · 凭据只发送到本机后端再转发给 caster，不写入磁盘。天空图以圆点 ● 表示。</div>
       </div>
       <div class="summary" id="srcSummary"><span id="srcDot" class="live-dot"><i></i></span><span id="srcSummaryTxt">未连接</span></div>
+    </section>
+
+    <!-- rover data source -->
+    <section class="card">
+      <div class="chead collapsed" onclick="toggleCard('srcBodyR',this)">
+        <h2><svg class="ic" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3"/><circle cx="12" cy="12" r="3"/></svg> 测站 NTRIP 数据源</h2>
+        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div id="srcBodyR" class="cbody hidden">
+        <div class="modetabs">
+          <button id="tabNtripR" class="on" onclick="event.stopPropagation();setModeR('ntrip')">NTRIP 接入</button>
+          <button id="tabFileR" onclick="event.stopPropagation();setModeR('file')">文件回放</button>
+        </div>
+        <div id="connR">
+          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="rhost" placeholder="rtk.example.com"></div>
+          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="rport" value="2101"></div>
+          <div class="fld ntrip"><label>挂载点</label><input id="rmount" placeholder="RTCM33"></div>
+          <div class="fld ntrip"><label>用户名</label><input id="ruser"></div>
+          <div class="fld ntrip"><label>密码</label><input id="rpass" type="password"></div>
+          <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="rgga" placeholder="$GPGGA,... 留空=非VRS"></div>
+          <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="rpath" placeholder="/path/to/rover.rtcm"></div>
+          <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="rspeed" value="1"></div>
+          <div class="btnrow">
+            <button id="rbtnConn" onclick="connectR()">连接</button>
+            <button id="rbtnDisc" class="ghost" onclick="disconnectR()" disabled>断开</button>
+          </div>
+        </div>
+        <div class="note">测站(rover)通道 · 方位/高度角共用基站坐标。天空图以十字 ✚ 表示。</div>
+      </div>
+      <div class="summary" id="srcSummaryR"><span id="srcDotR" class="live-dot"><i></i></span><span id="srcSummaryTxtR">未连接</span></div>
     </section>
 
     <!-- ephemeris -->
@@ -356,28 +389,48 @@ function cn0Color(v){ if(!v) return 'transparent';
   if(v>=35)return 'rgba(210,180,34,.8)'; if(v>=30)return 'rgba(210,140,34,.8)';
   return 'rgba(248,81,73,.8)'; }
 
-// ---------- mode ----------
-let mode='ntrip';
+// ---------- mode (base + rover) ----------
+let mode='ntrip', modeR='ntrip';
 function setMode(m){mode=m;
   document.getElementById('tabNtrip').classList.toggle('on',m==='ntrip');
   document.getElementById('tabFile').classList.toggle('on',m==='file');
   document.querySelectorAll('#conn .ntrip').forEach(e=>e.classList.toggle('hidden',m!=='ntrip'));
   document.querySelectorAll('#conn .file').forEach(e=>e.classList.toggle('hidden',m!=='file'));
 }
+function setModeR(m){modeR=m;
+  document.getElementById('tabNtripR').classList.toggle('on',m==='ntrip');
+  document.getElementById('tabFileR').classList.toggle('on',m==='file');
+  document.querySelectorAll('#connR .ntrip').forEach(e=>e.classList.toggle('hidden',m!=='ntrip'));
+  document.querySelectorAll('#connR .file').forEach(e=>e.classList.toggle('hidden',m!=='file'));
+}
 async function connect(){
-  let body={mode,sid:SID};
+  let body={mode,sid:SID,role:'base'};
   if(mode==='ntrip'){body.host=host.value;body.port=port.value;body.mountpoint=mount.value;
     body.user=user.value;body.password=pass.value;body.gga=gga.value;}
   else{body.path=path.value;body.speed=speed.value;}
   const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)});
   const j=await r.json();
-  if(!j.ok){alert('连接失败: '+(j.error||''));return;}
+  if(!j.ok){alert('基站连接失败: '+(j.error||''));return;}
   btnConn.disabled=true;btnDisc.disabled=false;
 }
 async function disconnect(){await fetch('/api/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({sid:SID})});
+    body:JSON.stringify({sid:SID,role:'base'})});
   btnConn.disabled=false;btnDisc.disabled=true;}
+async function connectR(){
+  let body={mode:modeR,sid:SID,role:'rover'};
+  if(modeR==='ntrip'){body.host=rhost.value;body.port=rport.value;body.mountpoint=rmount.value;
+    body.user=ruser.value;body.password=rpass.value;body.gga=rgga.value;}
+  else{body.path=rpath.value;body.speed=rspeed.value;}
+  const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
+  const j=await r.json();
+  if(!j.ok){alert('测站连接失败: '+(j.error||''));return;}
+  rbtnConn.disabled=true;rbtnDisc.disabled=false;
+}
+async function disconnectR(){await fetch('/api/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sid:SID,role:'rover'})});
+  rbtnConn.disabled=false;rbtnDisc.disabled=true;}
 async function connectEph(){
   const body={mode:'ntrip',sid:SID,host:ehost.value,port:eport.value,mountpoint:emount.value,
               user:euser.value,password:epass.value};
@@ -445,8 +498,12 @@ function buildBarTabs(systems){
 // ---------- render ----------
 function render(d){
   window.__lastData=d;                 // keep latest snapshot for filter re-render
-  // header / state
-  const st=d.status||{}; const pill=document.getElementById('statePill');
+  // header / state — pill follows base, but falls back to rover if only it is live
+  const _ch=d.channels||{};
+  const _bs=(_ch.base&&_ch.base.status)||d.status||{};
+  const _rs=(_ch.rover&&_ch.rover.status)||{};
+  const st=(_bs.state==='streaming'||(_rs.state!=='streaming'))?_bs:_rs;
+  const pill=document.getElementById('statePill');
   pill.textContent=st.msg||'未连接';
   const streaming=st.state==='streaming', errored=(st.state==='error'||st.state==='reconnecting');
   const offline=(st.state==='idle'||st.state==='stopped');
@@ -454,10 +511,12 @@ function render(d){
   pill.className='pill'+(streaming?' live':(errored?' err':(offline?' idle':'')));
   const ld=document.getElementById('liveDot');
   ld.className='live-dot'+dotCls;
-  // source summary line
-  const sd=document.getElementById('srcDot');
-  sd.className='live-dot'+dotCls;
-  document.getElementById('srcSummaryTxt').textContent=st.msg||'未连接';
+  // per-channel summary lines (base + rover, each reflects its own status)
+  const dotOf=s=>{const v=s.state; return v==='streaming'?' on':(v==='error'||v==='reconnecting')?' err':(v==='idle'||v==='stopped'||!v)?' idle':'';};
+  const sd=document.getElementById('srcDot'); if(sd)sd.className='live-dot'+dotOf(_bs);
+  document.getElementById('srcSummaryTxt').textContent=_bs.msg||'未连接';
+  const sdr=document.getElementById('srcDotR'); if(sdr)sdr.className='live-dot'+dotOf(_rs);
+  const sttR=document.getElementById('srcSummaryTxtR'); if(sttR)sttR.textContent=_rs.msg||'未连接';
 
   // KPIs (dim numbers when no live data)
   sStation.textContent=d.stats.station??'–';
@@ -486,11 +545,13 @@ function render(d){
 
   // ----- bar chart (with per-system filter + horizontal scroll) -----
   buildBarTabs(d.systems);
-  const barSats = (barSys==='all') ? sats : sats.filter(s=>s.sys===barSys);
+  const roleMark=s=>s.role==='rover'?'·测':'';        // base/rover label suffix (unique x categories)
+  const barSats = ((barSys==='all') ? sats : sats.filter(s=>s.sys===barSys))
+    .slice().sort((a,b)=> a.sat<b.sat?-1:a.sat>b.sat?1:(a.role===b.role?0:a.role==='base'?-1:1));
   // signal columns limited to the filtered set -> no empty datasets cluttering the legend
   const bSet=new Set(); barSats.forEach(s=>s.signals.forEach(g=>bSet.add(g.signal)));
   const bSigs=SIG_ORDER.filter(s=>bSet.has(s)).concat([...bSet].filter(s=>!SIG_ORDER.includes(s)));
-  barChart.data.labels=barSats.map(s=>s.sat);
+  barChart.data.labels=barSats.map(s=>s.sat+roleMark(s));
   barChart.data.datasets=bSigs.map(sig=>({label:sig,backgroundColor:sigColor(sig),
     minBarLength:3,                                   // weak signals stay visible (not zero-height)
     data:barSats.map(s=>{const g=s.signals.find(x=>x.signal===sig);return g&&g.cn0?g.cn0:null;})}));
@@ -506,8 +567,12 @@ function render(d){
     ' · 鼠标移到某颗星垂直区间即弹出全部信号读数。';
 
   // ----- matrix (heatmap) -----
-  let h='<tr><th>卫星</th><th>系统</th>'+sigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
-  sats.forEach(s=>{
+  const roleTag=s=> s.role==='rover'
+    ? '<span class="rtag rover" title="测站">✚ 测站</span>'
+    : '<span class="rtag base" title="基站">● 基站</span>';
+  const matSats=sats.slice().sort((a,b)=> a.sat<b.sat?-1:a.sat>b.sat?1:(a.role===b.role?0:a.role==='base'?-1:1));
+  let h='<tr><th>卫星</th><th>来源</th><th>系统</th>'+sigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
+  matSats.forEach(s=>{
     let rc=''; let badge='';
     if(s.recon){
       if(s.recon.sys==='BDS-2')badge='<span class="badge b2">BDS-2</span>';
@@ -517,7 +582,7 @@ function render(d){
     }
     const sysn=SYS_NAME[s.sys]||s.sys||'–';
     const sdot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${SYS_COLOR[s.sys]||'#8b9bb0'}"></span>`;
-    h+=`<tr class="${rc}"><td class="sat">${s.sat}</td><td style="text-align:left;white-space:nowrap">${sdot}${sysn}${s.recon?' '+s.recon.orbit:''}${badge}</td>`;
+    h+=`<tr class="${rc}"><td class="sat">${s.sat}</td><td style="white-space:nowrap">${roleTag(s)}</td><td style="text-align:left;white-space:nowrap">${sdot}${sysn}${s.recon?' '+s.recon.orbit:''}${badge}</td>`;
     sigs.forEach(sig=>{const g=s.signals.find(x=>x.signal===sig);
       if(g&&g.cn0){
         const crit=g.cn0<25?' cn0-crit':'';
@@ -526,7 +591,7 @@ function render(d){
     h+='</tr>';
   });
   if(!sats.length)
-    h+=`<tr><td colspan="${sigs.length+2}" style="border:none"><div class="mat-empty">⚙ 等待接入 NTRIP 数据源…</div></td></tr>`;
+    h+=`<tr><td colspan="${sigs.length+3}" style="border:none"><div class="mat-empty">⚙ 等待接入 NTRIP 数据源…</div></td></tr>`;
   document.getElementById('matrix').innerHTML=h;
 
   // ----- anomalies: aggregate satellites by (level,msg) into tag boxes -----
@@ -571,12 +636,39 @@ function render(d){
   document.getElementById('freqtab').innerHTML=ft;
 }
 
+// marker radius ∝ CN0, halved vs. the original scale (per spec: 比现在小一倍)
+function skyRad(cn0){return Math.max(1.5,(3+(Math.max(20,cn0)-20)*0.35)*0.5);}
+// one satellite marker: base -> 圆点 ●, rover -> 十字 ✚ ; color = constellation
+function skyMarker(x,y,cn0,sys,role,anom,sat,extra,labelOK){
+  const color=SYS_COLOR[sys]||'#8b9bb0'; const rad=skyRad(cn0);
+  const xf=x.toFixed(1), yf=y.toFixed(1);
+  const tip=`${sat} [${role==='rover'?'测站':'基站'}] ${extra?extra+' ':''}CN0=${cn0}`;
+  let m='';
+  if(role==='rover'){
+    const sw=Math.max(1.4,rad*0.7);
+    m+=`<path d="M${(x-rad).toFixed(1)} ${yf}H${(x+rad).toFixed(1)}M${xf} ${(y-rad).toFixed(1)}V${(y+rad).toFixed(1)}" `+
+       `stroke="${color}" stroke-width="${sw.toFixed(1)}" stroke-linecap="round"><title>${tip}</title></path>`;
+  }else{
+    m+=`<circle cx="${xf}" cy="${yf}" r="${rad.toFixed(1)}" fill="${color}" stroke="#0f1419" stroke-width="1"><title>${tip}</title></circle>`;
+  }
+  if(anom)m+=`<circle cx="${xf}" cy="${yf}" r="${(rad+2.5).toFixed(1)}" fill="none" stroke="#f85149" stroke-width="1.3"/>`;
+  if(labelOK)m+=`<text x="${xf}" y="${(y-rad-2.5).toFixed(1)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${sat}</text>`;
+  return m;
+}
 function drawSky(sats){
   const svg=document.getElementById('sky'); const cx=160,cy=160, R=150;
   const hasAzEl=sats.some(s=>s.el!=null&&s.az!=null);
+  const baseSet=new Set(sats.filter(s=>s.role==='base').map(s=>s.sat));
+  const lblOK=s=> s.role==='base' || !baseSet.has(s.sat);   // avoid双标签重叠
+  const anomOf=s=> s.recon&&s.recon.anomalies.some(a=>a.level!=='info');
   let g='<circle cx="160" cy="160" r="150" fill="#0f1419" stroke="#2c3a48"/>'+
         '<circle cx="160" cy="160" r="100" fill="none" stroke="#2c3a48"/>'+
         '<circle cx="160" cy="160" r="50" fill="none" stroke="#2c3a48"/>';
+  // marker legend (top-left)
+  const legend='<circle cx="18" cy="16" r="4" fill="#8b9bb0"/>'+
+    '<text x="26" y="19" fill="#8b9bb0" font-size="9">基站</text>'+
+    '<path d="M52 16h8M56 12v8" stroke="#8b9bb0" stroke-width="1.6" stroke-linecap="round"/>'+
+    '<text x="64" y="19" fill="#8b9bb0" font-size="9">测站</text>';
   const note=document.getElementById('skyNote');
   if(hasAzEl){
     g+='<line x1="160" y1="10" x2="160" y2="310" stroke="#2c3a48"/>'+
@@ -586,18 +678,21 @@ function drawSky(sats){
        '<text x="160" y="306" fill="#8b9bb0" font-size="10" text-anchor="middle">S</text>'+
        '<text x="16" y="164" fill="#8b9bb0" font-size="10" text-anchor="middle">W</text>'+
        '<text x="168" y="110" fill="#5f6b7a" font-size="8">60°</text>'+
-       '<text x="168" y="60" fill="#5f6b7a" font-size="8">30°</text>';
+       '<text x="168" y="60" fill="#5f6b7a" font-size="8">30°</text>'+
+       // 常用高度角参考线：10° (低空遮挡线) 与 75° (近天顶线)，10°-75° 为常用区间
+       // r = R*(90-el)/90  ->  10°→133.3, 75°→25
+       '<circle cx="160" cy="160" r="133.3" fill="none" stroke="#f0a020" stroke-width="1.5" stroke-dasharray="6 4"/>'+
+       '<circle cx="160" cy="160" r="25" fill="none" stroke="#f0a020" stroke-width="1.5" stroke-dasharray="6 4"/>'+
+       '<text x="256" y="62" fill="#f0a020" font-size="9" font-weight="700" text-anchor="middle">10°</text>'+
+       '<text x="186" y="139" fill="#f0a020" font-size="9" font-weight="700" text-anchor="middle">75°</text>';
+    g+=legend;
     sats.forEach(s=>{
       if(s.el==null||s.az==null||s.el<0)return;
       const r=R*(90-s.el)/90, a=s.az*Math.PI/180;
       const x=cx+r*Math.sin(a), y=cy-r*Math.cos(a);
-      const cn0=s.maxcn0||25, rad=3+(Math.max(20,cn0)-20)*0.35;
-      const anom=s.recon&&s.recon.anomalies.some(a=>a.level!=='info');
-      g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${SYS_COLOR[s.sys]||'#8b9bb0'}" `+
-         `stroke="${anom?'#f85149':'#0f1419'}" stroke-width="${anom?2:1}"><title>${s.sat} az=${s.az}° el=${s.el}° CN0=${cn0}</title></circle>`+
-         `<text x="${x.toFixed(1)}" y="${(y-rad-2).toFixed(1)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${s.sat}</text>`;
+      g+=skyMarker(x,y,s.maxcn0||25,s.sys,s.role,anomOf(s),s.sat,`az=${s.az}° el=${s.el}°`,lblOK(s));
     });
-    if(note)note.textContent='真实方位/高度角（来自广播星历）。中心=天顶(90°)，外环=地平(0°)，正上=北。';
+    if(note)note.textContent='真实方位/高度角（来自广播星历，测站共用基站坐标）。● 基站 / ✚ 测站，点大小 ∝ CN0，颜色=星座；橙色虚线 10°/75° 为常用区间。';
   }else{
     const bySys={}; sats.forEach(s=>{(bySys[s.sys]=bySys[s.sys]||[]).push(s);});
     const syss=Object.keys(bySys); let base=0;
@@ -607,15 +702,12 @@ function drawSky(sats){
         const ang=base+span*(i+0.5)/arr.length - Math.PI/2;
         const cn0=s.maxcn0||25; const r=Math.max(20,150-(cn0-20)*3.5);
         const x=cx+Math.cos(ang)*r, y=cy+Math.sin(ang)*r;
-        const rad=3+(Math.max(20,cn0)-20)*0.35;
-        const anom=s.recon&&s.recon.anomalies.some(a=>a.level!=='info');
-        g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${SYS_COLOR[sy]||'#8b9bb0'}" `+
-           `stroke="${anom?'#f85149':'#0f1419'}" stroke-width="${anom?2:1}"><title>${s.sat} CN0=${cn0}</title></circle>`+
-           `<text x="${x.toFixed(1)}" y="${(y-rad-2).toFixed(1)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${s.sat}</text>`;
+        g+=skyMarker(x,y,cn0,sy,s.role,anomOf(s),s.sat,'',lblOK(s));
       });
       base+=span;
     });
-    if(note)note.textContent='接入广播星历流后显示真实方位/高度角；当前为按系统环形近似（中心=强信号）。';
+    g+=legend;
+    if(note)note.textContent='接入广播星历流后显示真实方位/高度角；当前为按系统环形近似（中心=强信号）。● 基站 / ✚ 测站。';
   }
   svg.innerHTML=g;
 }

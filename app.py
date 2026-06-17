@@ -46,9 +46,12 @@ def _msg_name(ident):
     return "RTCM 报文"
 
 
-class State:
-    def __init__(self):
-        self.lock = threading.Lock()
+class Channel:
+    """One observation stream (a NTRIP / file source) and its decoded state.
+    Two channels live in a State: 'base' (基站) and 'rover' (测站)."""
+
+    def __init__(self, label):
+        self.label = label                     # "基站" / "测站"
         self.source = None
         self.status = {"state": "idle", "msg": "未连接"}
         # sat -> {sys,prn, signals:{code:{...,'ts':t}}}
@@ -57,27 +60,50 @@ class State:
         self.tow_ms = None
         self.last_sysname = None
         self.msg_count = 0
-        self.msg_times = []          # timestamps for rate calc
-        self.bytes_ref = 0
-        # broadcast ephemeris (separate stream)
+        self.msg_times = []                     # timestamps for rate calc
+        self.seen_types = set()                 # RTCM idents already announced
+        self._active_sats = set()               # for appear/lost detection
+        self._recon_flagged = {}                # sat -> set(anomaly msgs logged)
+
+    @property
+    def mountpoint(self):
+        return getattr(self.source, "mountpoint", None)
+
+    def reset(self):
+        self.sats = defaultdict(lambda: {"signals": {}})
+        self.station = None
+        self.tow_ms = None
+        self.last_sysname = None
+        self.msg_count = 0
+        self.msg_times = []
+        self.seen_types = set()
+        self._active_sats = set()
+        self._recon_flagged = {}
+
+
+class State:
+    def __init__(self):
+        self.lock = threading.Lock()
+        # two observation channels: base (基站) + rover (测站)
+        self.channels = {"base": Channel("基站"), "rover": Channel("测站")}
+        self.base_xyz = None         # base ECEF from 1005, shared for az/el
+        self.base_xyz_role = None    # which channel supplied base_xyz
+        # broadcast ephemeris (separate stream, shared by both channels)
         self.eph_source = None
         self.eph = {}                # sat -> normalized eph (+ 'ts')
         self.eph_msg_count = 0
         self.eph_status = {"state": "idle", "msg": "未连接"}
-        self.base_xyz = None         # base ECEF from 1005, for az/el
         # ---- event log (ring buffer, sent to browser) ----
         self.events = deque(maxlen=200)
-        self.seen_types = set()      # RTCM idents already announced
-        self._active_sats = set()    # for appear/lost detection
-        self._recon_flagged = {}     # sat -> set(anomaly msgs already logged)
         self._last_tick = 0.0
 
     def log(self, level, msg):
         """level: info / success / warn / error"""
         self.events.append({"ts": time.time(), "level": level, "msg": msg})
 
-    # ---- called from source thread, per validated frame
-    def on_frame(self, frame):
+    # ---- called from a channel's source thread, per validated frame
+    def on_frame(self, frame, role):
+        ch = self.channels[role]
         try:
             msg = rd.RTCMReader.parse(frame)
         except Exception:
@@ -85,10 +111,10 @@ class State:
         ident = str(msg.identity)
         now = time.time()
         with self.lock:
-            if ident not in self.seen_types:
-                self.seen_types.add(ident)
-                self.log("info", f"首次收到 {ident} 报文 ({_msg_name(ident)})")
-        if ident in orb.EPH_TYPES:                 # ephemeris stream
+            if ident not in ch.seen_types:
+                ch.seen_types.add(ident)
+                self.log("info", f"[{ch.label}] 首次收到 {ident} 报文 ({_msg_name(ident)})")
+        if ident in orb.EPH_TYPES:                 # ephemeris piggy-backed on obs
             e = orb.normalize(msg)
             with self.lock:
                 self.eph_msg_count += 1
@@ -98,28 +124,32 @@ class State:
             return
         d = rd.decode_msm(msg)
         with self.lock:
-            self.msg_count += 1
-            self.msg_times.append(now)
-            self.msg_times = self.msg_times[-200:]
-            if ident == "1005":   # base station ARP
+            ch.msg_count += 1
+            ch.msg_times.append(now)
+            ch.msg_times = ch.msg_times[-200:]
+            if ident == "1005":   # station ARP
                 sid = getattr(msg, "DF003", None)
-                if sid is not None and sid != self.station:
-                    self.log("info", f"基准站 ID: {sid}")
-                self.station = sid
+                if sid is not None and sid != ch.station:
+                    self.log("info", f"[{ch.label}] 基准站 ID: {sid}")
+                ch.station = sid
                 x = getattr(msg, "DF025", None)
                 y = getattr(msg, "DF026", None)
                 z = getattr(msg, "DF027", None)
                 if None not in (x, y, z):
-                    if self.base_xyz is None:
-                        self.log("success", "已获取基准站 ECEF 坐标，天空图可用真实方位/高度角")
-                    self.base_xyz = (x, y, z)
+                    # base supplies the shared coordinate; rover only fills in
+                    # when base hasn't provided one yet (rover shares base coord).
+                    if role == "base" or self.base_xyz is None:
+                        if self.base_xyz is None:
+                            self.log("success", "已获取基准站 ECEF 坐标，天空图可用真实方位/高度角")
+                        self.base_xyz = (x, y, z)
+                        self.base_xyz_role = role
             if not d:
                 return
-            self.station = d["station"]
-            self.tow_ms = d["tow_ms"]
-            self.last_sysname = d["sysname"]
+            ch.station = d["station"]
+            ch.tow_ms = d["tow_ms"]
+            ch.last_sysname = d["sysname"]
             for c in d["cells"]:
-                s = self.sats[c["sat"]]
+                s = ch.sats[c["sat"]]
                 s["sys"] = c["sys"]
                 s["prn"] = c["prn"]
                 s["signals"][c["code"]] = {
@@ -129,16 +159,34 @@ class State:
                     "pseudorange": c["pseudorange"], "ts": now,
                 }
 
+    # ---- dedicated ephemeris-stream frame handler (ignores observations)
+    def on_eph_frame(self, frame):
+        try:
+            msg = rd.RTCMReader.parse(frame)
+        except Exception:
+            return
+        ident = str(msg.identity)
+        now = time.time()
+        if ident not in orb.EPH_TYPES:
+            return
+        e = orb.normalize(msg)
+        with self.lock:
+            self.eph_msg_count += 1
+            if e:
+                e["ts"] = now
+                self.eph[e["sat"]] = e
+
     _ST_LEVEL = {"connecting": "info", "streaming": "success",
                  "reconnecting": "warn", "error": "error",
                  "stopped": "info", "idle": "info"}
 
-    def on_status(self, st):
+    def on_status(self, st, role):
+        ch = self.channels[role]
         with self.lock:
-            if st.get("state") != self.status.get("state"):
+            if st.get("state") != ch.status.get("state"):
                 self.log(self._ST_LEVEL.get(st.get("state"), "info"),
-                         st.get("msg", st.get("state", "")))
-            self.status = st
+                         f"[{ch.label}] " + st.get("msg", st.get("state", "")))
+            ch.status = st
 
     def on_eph_status(self, st):
         with self.lock:
@@ -147,101 +195,149 @@ class State:
                          f"[星历] {st.get('msg', st.get('state', ''))}")
             self.eph_status = st
 
+    # ---- build one channel's satellite list + per-channel stats
+    def _channel_snapshot(self, role, now):
+        ch = self.channels[role]
+        c_sats = []
+        sys_count = defaultdict(int)
+        sig_total = 0
+        multi_freq = 0
+        for sat, s in sorted(ch.sats.items()):
+            sigs = [v for v in s["signals"].values()
+                    if now - v["ts"] <= STALE_SEC]
+            if not sigs:
+                continue
+            sigs.sort(key=lambda x: (x["band"] or 99))
+            recon = None
+            if s.get("sys") == "C":
+                recon = br.check(s["prn"], [v["code"] for v in sigs])
+            cn0s = [v["cn0"] for v in sigs if v["cn0"]]
+            az = el = None
+            e = self.eph.get(sat)
+            # rover shares the base coordinate -> both channels use base_xyz
+            if e and self.base_xyz and ch.tow_ms is not None \
+                    and s.get("sys") == e["sys"]:
+                try:
+                    p = orb.sat_ecef(e, ch.tow_ms / 1000.0)
+                    if p:
+                        az, el = orb.azel(self.base_xyz, p)
+                except Exception:
+                    pass
+            c_sats.append({
+                "sat": sat, "role": role, "sys": s.get("sys"), "prn": s.get("prn"),
+                "signals": [{k: v[k] for k in
+                             ("code", "signal", "band", "band_name",
+                              "freq_mhz", "cn0", "pseudorange")}
+                            for v in sigs],
+                "maxcn0": max(cn0s) if cn0s else 0,
+                "recon": recon, "az": az, "el": el,
+            })
+            sys_count[s.get("sys")] += 1
+            sig_total += len(sigs)
+            if len({v["band"] for v in sigs if v["band"]}) >= 2:
+                multi_freq += 1
+
+        times = [t for t in ch.msg_times if now - t <= 5]
+        stat = {
+            "label": ch.label,
+            "status": ch.status,
+            "station": ch.station,
+            "tow_ms": ch.tow_ms,
+            "sysname": ch.last_sysname,
+            "mountpoint": ch.mountpoint,
+            "sats": len(c_sats),
+            "signals": sig_total,
+            "multi_freq": multi_freq,
+            "msg_rate": round(len(times) / 5.0, 1),
+            "msg_count": ch.msg_count,
+            "bytes_in": getattr(ch.source, "bytes_in", 0) if ch.source else 0,
+            "frames": getattr(ch.source, "frames", 0) if ch.source else 0,
+        }
+        return c_sats, stat, dict(sys_count)
+
     # ---- snapshot for the browser
     def snapshot(self):
         now = time.time()
         with self.lock:
             sats_out = []
             sys_count = defaultdict(int)
-            sig_total = 0
-            multi_freq = 0
-            for sat, s in sorted(self.sats.items()):
-                sigs = [v for v in s["signals"].values()
-                        if now - v["ts"] <= STALE_SEC]
-                if not sigs:
-                    continue
-                sigs.sort(key=lambda x: (x["band"] or 99))
-                recon = None
-                if s.get("sys") == "C":
-                    recon = br.check(s["prn"], [v["code"] for v in sigs])
-                cn0s = [v["cn0"] for v in sigs if v["cn0"]]
-                az = el = None
-                e = self.eph.get(sat)
-                if e and self.base_xyz and self.tow_ms is not None \
-                        and s.get("sys") == e["sys"]:
-                    try:
-                        p = orb.sat_ecef(e, self.tow_ms / 1000.0)
-                        if p:
-                            az, el = orb.azel(self.base_xyz, p)
-                    except Exception:
-                        pass
-                sats_out.append({
-                    "sat": sat, "sys": s.get("sys"), "prn": s.get("prn"),
-                    "signals": [{k: v[k] for k in
-                                 ("code", "signal", "band", "band_name",
-                                  "freq_mhz", "cn0", "pseudorange")}
-                                for v in sigs],
-                    "maxcn0": max(cn0s) if cn0s else 0,
-                    "recon": recon, "az": az, "el": el,
-                })
-                sys_count[s.get("sys")] += 1
-                sig_total += len(sigs)
-                if len({v["band"] for v in sigs if v["band"]}) >= 2:
-                    multi_freq += 1
+            chan_stats = {}
+            agg = {"sats": 0, "signals": 0, "multi_freq": 0,
+                   "msg_count": 0, "bytes_in": 0, "frames": 0, "rate": 0.0}
+            cur_sets = {}
+            for role in ("base", "rover"):
+                c_sats, stat, sc = self._channel_snapshot(role, now)
+                sats_out.extend(c_sats)
+                chan_stats[role] = stat
+                cur_sets[role] = {so["sat"] for so in c_sats}
+                for k, v in sc.items():
+                    sys_count[k] += v
+                agg["sats"] += stat["sats"]
+                agg["signals"] += stat["signals"]
+                agg["multi_freq"] += stat["multi_freq"]
+                agg["msg_count"] += stat["msg_count"]
+                agg["bytes_in"] += stat["bytes_in"]
+                agg["frames"] += stat["frames"]
+                agg["rate"] += stat["msg_rate"]
+            agg["rate"] = round(agg["rate"], 1)
 
             # ---- 1 Hz event tick (guarded so multiple SSE clients don't dup)
             if now - self._last_tick >= 0.9:
                 self._last_tick = now
-                cur = {so["sat"] for so in sats_out}
-                gained = sorted(cur - self._active_sats)
-                lost = sorted(self._active_sats - cur)
-                if gained:
-                    self.log("info", f"新增卫星 {', '.join(gained[:8])}"
-                             + (f" 等{len(gained)}颗" if len(gained) > 8 else ""))
-                if lost:
-                    self.log("warn", f"失锁卫星 {', '.join(lost[:8])}"
-                             + (f" 等{len(lost)}颗" if len(lost) > 8 else ""))
-                    for s_ in lost:
-                        self._recon_flagged.pop(s_, None)
-                self._active_sats = cur
-                agg = {}                      # BDS 重构异常，每星每条只记一次，同类合并
+                for role in ("base", "rover"):
+                    ch = self.channels[role]
+                    cur = cur_sets[role]
+                    gained = sorted(cur - ch._active_sats)
+                    lost = sorted(ch._active_sats - cur)
+                    if gained:
+                        self.log("info", f"[{ch.label}] 新增卫星 {', '.join(gained[:8])}"
+                                 + (f" 等{len(gained)}颗" if len(gained) > 8 else ""))
+                    if lost:
+                        self.log("warn", f"[{ch.label}] 失锁卫星 {', '.join(lost[:8])}"
+                                 + (f" 等{len(lost)}颗" if len(lost) > 8 else ""))
+                        for s_ in lost:
+                            ch._recon_flagged.pop(s_, None)
+                    ch._active_sats = cur
+                # BDS 重构异常：每通道每星每条只记一次，按(通道,消息)合并
+                anom = {}
                 for so in sats_out:
                     rc = so.get("recon")
                     if not rc or rc.get("ok"):
                         continue
-                    flagged = self._recon_flagged.setdefault(so["sat"], set())
+                    ch = self.channels[so["role"]]
+                    flagged = ch._recon_flagged.setdefault(so["sat"], set())
                     for a in rc["anomalies"]:
                         if a["level"] == "info" or a["msg"] in flagged:
                             continue
                         flagged.add(a["msg"])
-                        lv, lst = agg.setdefault(a["msg"], (a["level"], []))
+                        lv, lst = anom.setdefault((so["role"], a["msg"]),
+                                                  (a["level"], []))
                         lst.append(so["sat"])
-                for m, (lv, lst) in agg.items():
-                    self.log(lv, f"{', '.join(lst[:8])}"
+                for (role, m), (lv, lst) in anom.items():
+                    lab = self.channels[role].label
+                    self.log(lv, f"[{lab}] {', '.join(lst[:8])}"
                              + (f" 等{len(lst)}颗" if len(lst) > 8 else "")
                              + f": {m}")
 
-            times = [t for t in self.msg_times if now - t <= 5]
-            rate = round(len(times) / 5.0, 1)
-            bytes_in = getattr(self.source, "bytes_in", 0) if self.source else 0
-            frames = getattr(self.source, "frames", 0) if self.source else 0
+            base, rover = self.channels["base"], self.channels["rover"]
             eph_sys = defaultdict(int)
             for ee in self.eph.values():
                 eph_sys[ee["sys"]] += 1
             return {
                 "ts": now,
-                "status": self.status,
-                "stats": {
-                    "station": self.station,
-                    "tow_ms": self.tow_ms,
-                    "sysname": self.last_sysname,
-                    "sats": len(sats_out),
-                    "signals": sig_total,
-                    "multi_freq": multi_freq,
-                    "msg_rate": rate,
-                    "msg_count": self.msg_count,
-                    "bytes_in": bytes_in,
-                    "frames": frames,
+                "status": base.status,           # header pill follows base
+                "channels": chan_stats,
+                "stats": {                       # aggregate (both channels)
+                    "station": base.station,
+                    "tow_ms": base.tow_ms if base.tow_ms is not None else rover.tow_ms,
+                    "sysname": base.last_sysname,
+                    "sats": agg["sats"],
+                    "signals": agg["signals"],
+                    "multi_freq": agg["multi_freq"],
+                    "msg_rate": agg["rate"],
+                    "msg_count": agg["msg_count"],
+                    "bytes_in": agg["bytes_in"],
+                    "frames": agg["frames"],
                 },
                 "systems": dict(sys_count),
                 "sats": sats_out,
@@ -259,29 +355,24 @@ class State:
                 },
             }
 
-    def start(self, src):
-        self.stop()
+    def start(self, role, src):
+        self.stop(role)
         with self.lock:
-            self.sats = defaultdict(lambda: {"signals": {}})
-            self.msg_count = 0
-            self.msg_times = []
-            self.station = None
-            self.tow_ms = None
-            self.last_sysname = None
-            self.seen_types = set()
-            self._active_sats = set()
-            self._recon_flagged = {}
-        self.source = src
+            self.channels[role].reset()
+        self.channels[role].source = src
         src.start()
 
-    def stop(self):
-        if self.source:
-            self.source.stop()
-            self.source = None
+    def stop(self, role=None):
+        roles = [role] if role else list(self.channels)
+        for r in roles:
+            ch = self.channels[r]
+            if ch.source:
+                ch.source.stop()
+                ch.source = None
+                with self.lock:
+                    self.log("info", f"[{ch.label}] 用户手动断开连接")
             with self.lock:
-                self.log("info", "用户手动断开连接")
-        with self.lock:
-            self.status = {"state": "idle", "msg": "未连接"}
+                ch.status = {"state": "idle", "msg": "未连接"}
 
     def start_eph(self, src):
         self.stop_eph()
@@ -362,19 +453,24 @@ def api_connect():
     cfg = request.get_json(force=True)
     state = MANAGER.get(_sid_from_body(cfg))
     mode = cfg.get("mode", "ntrip")
+    role = cfg.get("role", "base")
+    if role not in state.channels:
+        return {"ok": False, "error": f"未知通道: {role}"}, 400
+    on_frame = lambda fr, _r=role: state.on_frame(fr, _r)
+    on_status = lambda st, _r=role: state.on_status(st, _r)
     try:
         if mode == "file":
             from ntrip_source import FileSource
-            src = FileSource(cfg["path"], state.on_frame, state.on_status,
+            src = FileSource(cfg["path"], on_frame, on_status,
                              speed=float(cfg.get("speed", 1.0)),
                              loop=bool(cfg.get("loop", True)))
         else:
             from ntrip_source import NtripSource
             src = NtripSource(cfg["host"], cfg["port"], cfg["mountpoint"],
                               cfg.get("user", ""), cfg.get("password", ""),
-                              state.on_frame, state.on_status,
+                              on_frame, on_status,
                               gga=cfg.get("gga", ""))
-        state.start(src)
+        state.start(role, src)
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}, 400
@@ -383,7 +479,9 @@ def api_connect():
 @app.route("/api/disconnect", methods=["POST"])
 def api_disconnect():
     cfg = request.get_json(silent=True) or {}
-    MANAGER.get(_sid_from_body(cfg)).stop()
+    role = cfg.get("role", "base")
+    state = MANAGER.get(_sid_from_body(cfg))
+    state.stop(role if role in state.channels else None)
     return {"ok": True}
 
 
@@ -394,14 +492,14 @@ def api_connect_eph():
     try:
         if cfg.get("mode") == "file":
             from ntrip_source import FileSource
-            src = FileSource(cfg["path"], state.on_frame, lambda s: None,
+            src = FileSource(cfg["path"], state.on_eph_frame, lambda s: None,
                              speed=float(cfg.get("speed", 1.0)),
                              loop=bool(cfg.get("loop", True)))
         else:
             from ntrip_source import NtripSource
             src = NtripSource(cfg["host"], cfg["port"], cfg["mountpoint"],
                               cfg.get("user", ""), cfg.get("password", ""),
-                              state.on_frame, state.on_eph_status,
+                              state.on_eph_frame, state.on_eph_status,
                               gga=cfg.get("gga", ""))
         state.start_eph(src)
         return {"ok": True}
