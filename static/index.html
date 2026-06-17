@@ -79,12 +79,12 @@
            font-size:11.5px;color:var(--mut);display:flex;align-items:center;gap:7px}
 
   /* ---------- connection form ---------- */
-  #conn,#conn2{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
-  #conn .fld,#conn2 .fld{display:flex;flex-direction:column;gap:3px}
-  #conn label,#conn2 label{font-size:11px;color:var(--mut)}
-  #conn input,#conn select,#conn2 input{background:var(--card2);border:1px solid var(--line);color:var(--txt);
+  #conn,#conn2,#connR{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  #conn .fld,#conn2 .fld,#connR .fld{display:flex;flex-direction:column;gap:3px}
+  #conn label,#conn2 label,#connR label{font-size:11px;color:var(--mut)}
+  #conn input,#conn select,#conn2 input,#connR input,#connR select{background:var(--card2);border:1px solid var(--line);color:var(--txt);
         border-radius:6px;padding:6px 8px;font-size:12px;width:100%;min-width:0}
-  #conn .fld,#conn2 .fld{flex:1 1 130px}
+  #conn .fld,#conn2 .fld,#connR .fld{flex:1 1 130px}
   button{background:var(--acc);color:#06121f;border:none;border-radius:6px;padding:7px 14px;
          font-weight:600;cursor:pointer;font-size:12px}
   button.ghost{background:var(--card2);color:var(--txt);border:1px solid var(--line)}
@@ -140,6 +140,7 @@
   .sw{width:12px;height:12px;border-radius:3px;display:inline-block}
   .row{display:flex;gap:10px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
   select.sel{background:var(--card2);border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:5px 8px}
+  select.chsel{float:right;font-size:11px;padding:3px 6px;font-weight:400;margin-top:-2px}
   canvas{max-width:100%}
   .freqtab td{text-align:left}
 
@@ -305,7 +306,8 @@
       <section class="card">
         <div class="bd">
           <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-            卫星 × 信号矩阵 <span class="tag">单元格 = CN0 热力图</span></h2>
+            卫星 × 信号矩阵 <span class="tag">单元格 = CN0 热力图</span>
+            <select class="sel chsel" id="matRoleSel" onchange="setMatRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
           <div class="matwrap" style="margin-top:10px"><table id="matrix"></table></div>
         </div>
       </section>
@@ -313,7 +315,8 @@
       <section class="card">
         <div class="bd">
           <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><circle cx="12" cy="12" r="9"/><path d="m16.2 7.8-2.9 5.4-5.5 3 2.9-5.4z"/></svg>
-            天空图 (CN0 雷达) <span class="tag">点大小 ∝ CN0</span></h2>
+            天空图 (CN0 雷达) <span class="tag">点大小 ∝ CN0</span>
+            <select class="sel chsel" id="skyRoleSel" onchange="setSkyRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
           <svg id="sky" viewBox="0 0 320 320" width="100%" style="max-height:300px;margin-top:8px"></svg>
           <div class="note" id="skyNote">接入广播星历流后显示真实方位/高度角；未接入时按系统环形近似展示。</div>
         </div>
@@ -324,7 +327,8 @@
     <section class="card">
       <div class="bd">
         <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="13" width="3" height="5"/></svg>
-          CN0 信噪比 <span class="tag">每颗星按信号分组着色 (dB-Hz)</span></h2>
+          CN0 信噪比 <span class="tag">每颗星按信号分组着色 (dB-Hz)</span>
+          <select class="sel chsel" id="barRoleSel" onchange="setBarRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
         <div class="systabs" id="barTabs" style="margin-top:10px"></div>
         <div class="barscroll" style="overflow-x:auto;overflow-y:hidden;margin-top:8px">
           <div id="barInner" style="position:relative;height:260px;min-width:100%"><canvas id="barChart"></canvas></div>
@@ -477,6 +481,13 @@ function renderLog(events){
 // ---------- CN0 bar: system filter ----------
 const SYS_NAME={C:'北斗',G:'GPS',E:'Galileo',R:'GLONASS',J:'QZSS',S:'SBAS',I:'IRNSS'};
 let barSys='all';
+// ---------- per-panel channel filter (基站/测站/共同) ----------
+let matRole='both', skyRole='both', barRole='both';
+function _reRender(){ if(window.__lastData) render(window.__lastData); }
+function setMatRole(v){matRole=v;_reRender();}
+function setSkyRole(v){skyRole=v;_reRender();}
+function setBarRole(v){barRole=v;_reRender();}
+function byRole(arr,role){return role==='both'?arr:arr.filter(s=>s.role===role);}
 function setBarSys(s){barSys=s;
   document.querySelectorAll('#barTabs button').forEach(b=>b.classList.toggle('on',b.dataset.sys===s));
   if(window.__lastData)render(window.__lastData);   // re-render with current snapshot
@@ -546,7 +557,7 @@ function render(d){
   // ----- bar chart (with per-system filter + horizontal scroll) -----
   buildBarTabs(d.systems);
   const roleMark=s=>s.role==='rover'?'·测':'';        // base/rover label suffix (unique x categories)
-  const barSats = ((barSys==='all') ? sats : sats.filter(s=>s.sys===barSys))
+  const barSats = byRole((barSys==='all') ? sats : sats.filter(s=>s.sys===barSys), barRole)
     .slice().sort((a,b)=> a.sat<b.sat?-1:a.sat>b.sat?1:(a.role===b.role?0:a.role==='base'?-1:1));
   // signal columns limited to the filtered set -> no empty datasets cluttering the legend
   const bSet=new Set(); barSats.forEach(s=>s.signals.forEach(g=>bSet.add(g.signal)));
@@ -570,7 +581,7 @@ function render(d){
   const roleTag=s=> s.role==='rover'
     ? '<span class="rtag rover" title="测站">✚ 测站</span>'
     : '<span class="rtag base" title="基站">● 基站</span>';
-  const matSats=sats.slice().sort((a,b)=> a.sat<b.sat?-1:a.sat>b.sat?1:(a.role===b.role?0:a.role==='base'?-1:1));
+  const matSats=byRole(sats,matRole).slice().sort((a,b)=> a.sat<b.sat?-1:a.sat>b.sat?1:(a.role===b.role?0:a.role==='base'?-1:1));
   let h='<tr><th>卫星</th><th>来源</th><th>系统</th>'+sigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
   matSats.forEach(s=>{
     let rc=''; let badge='';
@@ -590,8 +601,8 @@ function render(d){
       } else h+='<td style="color:#5f6b7a">-</td>';});
     h+='</tr>';
   });
-  if(!sats.length)
-    h+=`<tr><td colspan="${sigs.length+3}" style="border:none"><div class="mat-empty">⚙ 等待接入 NTRIP 数据源…</div></td></tr>`;
+  if(!matSats.length)
+    h+=`<tr><td colspan="${sigs.length+3}" style="border:none"><div class="mat-empty">⚙ ${sats.length?'该通道暂无卫星':'等待接入 NTRIP 数据源…'}</div></td></tr>`;
   document.getElementById('matrix').innerHTML=h;
 
   // ----- anomalies: aggregate satellites by (level,msg) into tag boxes -----
@@ -619,7 +630,7 @@ function render(d){
   }
 
   // ----- skyplot -----
-  drawSky(sats);
+  drawSky(byRole(sats,skyRole));
 
   // ----- realtime event log -----
   renderLog(d.events||[]);
@@ -638,21 +649,24 @@ function render(d){
 
 // marker radius ∝ CN0, halved vs. the original scale (per spec: 比现在小一倍)
 function skyRad(cn0){return Math.max(1.5,(3+(Math.max(20,cn0)-20)*0.35)*0.5);}
-// one satellite marker: base -> 圆点 ●, rover -> 十字 ✚ ; color = constellation
+// one satellite marker: base -> 实心圆点 ●, rover -> 开口准星 ✛ ; color = constellation
+// rover 用"开口十字"(中心留空)，叠在基站圆点上时像准星框，避免糊成一团
 function skyMarker(x,y,cn0,sys,role,anom,sat,extra,labelOK){
   const color=SYS_COLOR[sys]||'#8b9bb0'; const rad=skyRad(cn0);
-  const xf=x.toFixed(1), yf=y.toFixed(1);
+  const f=v=>v.toFixed(1); const xf=f(x), yf=f(y);
   const tip=`${sat} [${role==='rover'?'测站':'基站'}] ${extra?extra+' ':''}CN0=${cn0}`;
-  let m='';
+  let m='', outer=rad;
   if(role==='rover'){
-    const sw=Math.max(1.4,rad*0.7);
-    m+=`<path d="M${(x-rad).toFixed(1)} ${yf}H${(x+rad).toFixed(1)}M${xf} ${(y-rad).toFixed(1)}V${(y+rad).toFixed(1)}" `+
-       `stroke="${color}" stroke-width="${sw.toFixed(1)}" stroke-linecap="round"><title>${tip}</title></path>`;
+    const o=rad+3, gi=rad*0.6+1.2;            // 外臂端 / 内侧开口
+    outer=o;
+    m+=`<path d="M${xf} ${f(y-o)}V${f(y-gi)} M${xf} ${f(y+gi)}V${f(y+o)} `+
+       `M${f(x-o)} ${yf}H${f(x-gi)} M${f(x+gi)} ${yf}H${f(x+o)}" `+
+       `stroke="${color}" stroke-width="1.6" stroke-linecap="round" fill="none"><title>${tip}</title></path>`;
   }else{
-    m+=`<circle cx="${xf}" cy="${yf}" r="${rad.toFixed(1)}" fill="${color}" stroke="#0f1419" stroke-width="1"><title>${tip}</title></circle>`;
+    m+=`<circle cx="${xf}" cy="${yf}" r="${f(rad)}" fill="${color}" stroke="#0f1419" stroke-width="1"><title>${tip}</title></circle>`;
   }
-  if(anom)m+=`<circle cx="${xf}" cy="${yf}" r="${(rad+2.5).toFixed(1)}" fill="none" stroke="#f85149" stroke-width="1.3"/>`;
-  if(labelOK)m+=`<text x="${xf}" y="${(y-rad-2.5).toFixed(1)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${sat}</text>`;
+  if(anom)m+=`<circle cx="${xf}" cy="${yf}" r="${f(outer+2.2)}" fill="none" stroke="#f85149" stroke-width="1.2"/>`;
+  if(labelOK)m+=`<text x="${xf}" y="${f(y-outer-2.5)}" fill="#8b9bb0" font-size="8" text-anchor="middle">${sat}</text>`;
   return m;
 }
 function drawSky(sats){
@@ -667,8 +681,8 @@ function drawSky(sats){
   // marker legend (top-left)
   const legend='<circle cx="18" cy="16" r="4" fill="#8b9bb0"/>'+
     '<text x="26" y="19" fill="#8b9bb0" font-size="9">基站</text>'+
-    '<path d="M52 16h8M56 12v8" stroke="#8b9bb0" stroke-width="1.6" stroke-linecap="round"/>'+
-    '<text x="64" y="19" fill="#8b9bb0" font-size="9">测站</text>';
+    '<path d="M56 10V14M56 18V22M50 16H54M58 16H62" stroke="#8b9bb0" stroke-width="1.6" stroke-linecap="round"/>'+
+    '<text x="66" y="19" fill="#8b9bb0" font-size="9">测站</text>';
   const note=document.getElementById('skyNote');
   if(hasAzEl){
     g+='<line x1="160" y1="10" x2="160" y2="310" stroke="#2c3a48"/>'+
