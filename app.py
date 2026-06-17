@@ -12,7 +12,7 @@ import argparse
 import json
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from flask import Flask, Response, request, send_from_directory
 
@@ -22,6 +22,28 @@ import gnss_orbit as orb
 
 STALE_SEC = 15.0          # drop a signal not refreshed for this long
 app = Flask(__name__, static_folder="static")
+
+
+def _msg_name(ident):
+    """Human-readable name for an RTCM message type."""
+    names = {
+        "1005": "基准站坐标(ARP)", "1006": "基准站坐标+天线高",
+        "1019": "GPS 星历", "1020": "GLONASS 星历", "1042": "BDS 星历",
+        "1044": "QZSS 星历", "1046": "Galileo 星历(I/NAV)",
+        "1045": "Galileo 星历(F/NAV)", "1033": "接收机/天线描述",
+        "1230": "GLONASS 码相位偏差",
+    }
+    if ident in names:
+        return names[ident]
+    try:
+        n = int(ident)
+        sysn = {107: "GPS", 108: "GLONASS", 109: "Galileo",
+                111: "QZSS", 112: "BDS"}.get(n // 10)
+        if sysn:
+            return f"{sysn} MSM{n % 10} 观测值"
+    except ValueError:
+        pass
+    return "RTCM 报文"
 
 
 class State:
@@ -43,6 +65,16 @@ class State:
         self.eph_msg_count = 0
         self.eph_status = {"state": "idle", "msg": "未连接"}
         self.base_xyz = None         # base ECEF from 1005, for az/el
+        # ---- event log (ring buffer, sent to browser) ----
+        self.events = deque(maxlen=200)
+        self.seen_types = set()      # RTCM idents already announced
+        self._active_sats = set()    # for appear/lost detection
+        self._recon_flagged = {}     # sat -> set(anomaly msgs already logged)
+        self._last_tick = 0.0
+
+    def log(self, level, msg):
+        """level: info / success / warn / error"""
+        self.events.append({"ts": time.time(), "level": level, "msg": msg})
 
     # ---- called from source thread, per validated frame
     def on_frame(self, frame):
@@ -52,6 +84,10 @@ class State:
             return
         ident = str(msg.identity)
         now = time.time()
+        with self.lock:
+            if ident not in self.seen_types:
+                self.seen_types.add(ident)
+                self.log("info", f"首次收到 {ident} 报文 ({_msg_name(ident)})")
         if ident in orb.EPH_TYPES:                 # ephemeris stream
             e = orb.normalize(msg)
             with self.lock:
@@ -66,11 +102,16 @@ class State:
             self.msg_times.append(now)
             self.msg_times = self.msg_times[-200:]
             if ident == "1005":   # base station ARP
-                self.station = getattr(msg, "DF003", None)
+                sid = getattr(msg, "DF003", None)
+                if sid is not None and sid != self.station:
+                    self.log("info", f"基准站 ID: {sid}")
+                self.station = sid
                 x = getattr(msg, "DF025", None)
                 y = getattr(msg, "DF026", None)
                 z = getattr(msg, "DF027", None)
                 if None not in (x, y, z):
+                    if self.base_xyz is None:
+                        self.log("success", "已获取基准站 ECEF 坐标，天空图可用真实方位/高度角")
                     self.base_xyz = (x, y, z)
             if not d:
                 return
@@ -88,12 +129,22 @@ class State:
                     "pseudorange": c["pseudorange"], "ts": now,
                 }
 
+    _ST_LEVEL = {"connecting": "info", "streaming": "success",
+                 "reconnecting": "warn", "error": "error",
+                 "stopped": "info", "idle": "info"}
+
     def on_status(self, st):
         with self.lock:
+            if st.get("state") != self.status.get("state"):
+                self.log(self._ST_LEVEL.get(st.get("state"), "info"),
+                         st.get("msg", st.get("state", "")))
             self.status = st
 
     def on_eph_status(self, st):
         with self.lock:
+            if st.get("state") != self.eph_status.get("state"):
+                self.log(self._ST_LEVEL.get(st.get("state"), "info"),
+                         f"[星历] {st.get('msg', st.get('state', ''))}")
             self.eph_status = st
 
     # ---- snapshot for the browser
@@ -103,6 +154,7 @@ class State:
             sats_out = []
             sys_count = defaultdict(int)
             sig_total = 0
+            multi_freq = 0
             for sat, s in sorted(self.sats.items()):
                 sigs = [v for v in s["signals"].values()
                         if now - v["ts"] <= STALE_SEC]
@@ -134,6 +186,40 @@ class State:
                 })
                 sys_count[s.get("sys")] += 1
                 sig_total += len(sigs)
+                if len({v["band"] for v in sigs if v["band"]}) >= 2:
+                    multi_freq += 1
+
+            # ---- 1 Hz event tick (guarded so multiple SSE clients don't dup)
+            if now - self._last_tick >= 0.9:
+                self._last_tick = now
+                cur = {so["sat"] for so in sats_out}
+                gained = sorted(cur - self._active_sats)
+                lost = sorted(self._active_sats - cur)
+                if gained:
+                    self.log("info", f"新增卫星 {', '.join(gained[:8])}"
+                             + (f" 等{len(gained)}颗" if len(gained) > 8 else ""))
+                if lost:
+                    self.log("warn", f"失锁卫星 {', '.join(lost[:8])}"
+                             + (f" 等{len(lost)}颗" if len(lost) > 8 else ""))
+                    for s_ in lost:
+                        self._recon_flagged.pop(s_, None)
+                self._active_sats = cur
+                agg = {}                      # BDS 重构异常，每星每条只记一次，同类合并
+                for so in sats_out:
+                    rc = so.get("recon")
+                    if not rc or rc.get("ok"):
+                        continue
+                    flagged = self._recon_flagged.setdefault(so["sat"], set())
+                    for a in rc["anomalies"]:
+                        if a["level"] == "info" or a["msg"] in flagged:
+                            continue
+                        flagged.add(a["msg"])
+                        lv, lst = agg.setdefault(a["msg"], (a["level"], []))
+                        lst.append(so["sat"])
+                for m, (lv, lst) in agg.items():
+                    self.log(lv, f"{', '.join(lst[:8])}"
+                             + (f" 等{len(lst)}颗" if len(lst) > 8 else "")
+                             + f": {m}")
 
             times = [t for t in self.msg_times if now - t <= 5]
             rate = round(len(times) / 5.0, 1)
@@ -151,6 +237,7 @@ class State:
                     "sysname": self.last_sysname,
                     "sats": len(sats_out),
                     "signals": sig_total,
+                    "multi_freq": multi_freq,
                     "msg_rate": rate,
                     "msg_count": self.msg_count,
                     "bytes_in": bytes_in,
@@ -158,6 +245,7 @@ class State:
                 },
                 "systems": dict(sys_count),
                 "sats": sats_out,
+                "events": list(self.events),
                 "eph": {
                     "state": (self.eph_source.__class__.__name__
                               if self.eph_source else None),
@@ -180,6 +268,9 @@ class State:
             self.station = None
             self.tow_ms = None
             self.last_sysname = None
+            self.seen_types = set()
+            self._active_sats = set()
+            self._recon_flagged = {}
         self.source = src
         src.start()
 
@@ -187,6 +278,8 @@ class State:
         if self.source:
             self.source.stop()
             self.source = None
+            with self.lock:
+                self.log("info", "用户手动断开连接")
         with self.lock:
             self.status = {"state": "idle", "msg": "未连接"}
 
