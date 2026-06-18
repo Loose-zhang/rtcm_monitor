@@ -444,7 +444,12 @@
 
 <script>
 // ---------- per-device session id (isolates state across devices/browsers) ----------
-const SID = (()=>{ let s; try{ s=localStorage.getItem('rtcm_sid'); }catch(e){}
+// URL 参数 ?sid=xxx 优先: 用同一个 sid 即可跨电脑共享同一会话(实时状态+录制+导出)。
+// 约定: 用 NTRIP 挂载点名/站点名当 sid, 即可"按站点"在另一台电脑查看本机录制结果。
+const SID = (()=>{
+  const u = new URLSearchParams(location.search).get('sid');
+  if(u){ try{localStorage.setItem('rtcm_sid',u);}catch(e){} return u; }
+  let s; try{ s=localStorage.getItem('rtcm_sid'); }catch(e){}
   if(!s){ s=(crypto.randomUUID?crypto.randomUUID():('s'+Date.now()+Math.random().toString(16).slice(2)));
     try{localStorage.setItem('rtcm_sid',s);}catch(e){} }
   return s; })();
