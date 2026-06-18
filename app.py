@@ -6,7 +6,7 @@ observations, aggregates per-satellite / per-signal CN0 + frequency, applies the
 BeiDou 2026/04 reconstruction-aware checks, and streams it all to the browser
 dashboard over Server-Sent Events.
 
-Run:  python app.py   ->  open http://127.0.0.1:8765
+Run:  python app.py   ->  open http://127.0.0.1:7999
 """
 import argparse
 import json
@@ -587,7 +587,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="RTCM Monitor 服务")
     ap.add_argument("--host", default="127.0.0.1",
                     help="监听地址 (默认 127.0.0.1；对外访问用 0.0.0.0)")
-    ap.add_argument("--port", type=int, default=8765, help="监听端口 (默认 8765)")
+    ap.add_argument("--port", type=int, default=7999, help="监听端口 (默认 7999)")
     args = ap.parse_args()
     shown = "127.0.0.1" if args.host in ("0.0.0.0", "") else args.host
     print(f"RTCM Monitor  ->  http://{shown}:{args.port}")

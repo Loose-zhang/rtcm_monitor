@@ -90,9 +90,10 @@
   .cbody{padding:12px;border-top:1px solid var(--line)}
   .cbody.hidden{display:none}
   .summary{padding:8px 12px;border-top:1px solid var(--line);background:var(--card2);
-           font-size:11.5px;color:var(--mut);display:flex;align-items:center;gap:7px}
-  .recbadge{margin-left:auto;font-size:10.5px;font-weight:600;white-space:nowrap;
-            padding:1px 8px;border-radius:10px;color:#cdebd6;
+           font-size:11.5px;color:var(--mut);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .recbadge{margin-left:auto;font-size:10px;font-weight:600;white-space:nowrap;line-height:1.5;
+            padding:1px 7px;border-radius:9px;color:#cdebd6;max-width:100%;
+            overflow:hidden;text-overflow:ellipsis;
             background:rgba(38,170,90,.16);border:1px solid rgba(38,170,90,.45)}
   .recbadge.err{color:#f2c2c2;background:rgba(200,60,60,.16);border-color:rgba(200,60,60,.5)}
   .recbadge.hidden{display:none}
@@ -148,6 +149,18 @@
   .rtag{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:600;white-space:nowrap}
   .rtag.base{background:rgba(74,168,255,.16);color:#7cc1ff;border:1px solid rgba(74,168,255,.4)}
   .rtag.rover{background:rgba(255,166,87,.16);color:#ffb877;border:1px solid rgba(255,166,87,.45)}
+  /* 合并单元格：左=基站 右=测站，各自按 CN0 着色 */
+  td.cn0c{padding:0}
+  .cn0split{display:flex;width:100%;height:100%;min-height:20px}
+  .cn0split>span{flex:1 1 0;min-width:0;padding:3px 2px;font-weight:600;color:#06121f;
+                 font-variant-numeric:tabular-nums;line-height:1.4}
+  .cn0split>span.b{border-right:1px solid rgba(15,20,25,.4)}
+  .cn0split>span.empty{color:#46525f;background:transparent;font-weight:400}
+  .cn0split>span.crit{animation:blink 1.1s ease-in-out infinite}
+  /* 来源图例标头 */
+  .srcleg{font-size:11px;color:var(--mut);font-weight:400;display:inline-flex;align-items:center;gap:10px;margin-left:2px}
+  .srcleg b{font-weight:600}
+  .srcleg .s1{color:#7cc1ff} .srcleg .s2{color:#ffb877}
   /* 矩阵↔天空图 联动高亮 */
   #matrix tr{cursor:pointer}
   #matrix tr:hover td{background:rgba(74,168,255,.10)}
@@ -344,7 +357,7 @@
       <section class="card">
         <div class="bd">
           <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-            卫星 × 信号矩阵 <span class="tag">单元格 = CN0 热力图 · 悬浮联动天空图</span>
+            卫星 × 信号矩阵 <span class="srcleg">每格 <b class="s1">左●基站</b> / <b class="s2">右✚测站</b> · 悬浮联动天空图</span>
             <select class="sel chsel" id="matRoleSel" onchange="setMatRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
           <div class="matwrap"><table id="matrix"></table></div>
         </div>
@@ -553,8 +566,10 @@ function render(d){
     const r=ch&&ch.rec;
     if(!r||!r.recording){b.classList.add('hidden');return;}
     b.classList.remove('hidden');
-    const cur=r.cur_period?` · 当前 ${r.cur_period}`:'';
-    b.textContent=`● 录制中 · 已存 ${r.periods} 周期${cur}`;
+    let cur='';
+    if(r.cur_period){const m=/T(\d{2})(\d{2})/.exec(r.cur_period); cur=m?` · ${m[1]}:${m[2]}`:'';}
+    b.textContent=`● 录制中 · ${r.periods} 周期${cur}`;
+    b.title=`录制底座：每10分钟保留一个完整历元+卫星位置${r.cur_period?' · 当前周期 '+r.cur_period:''}`;
     b.classList.toggle('err', !!r.error);};
   recBadge('recBadge', _ch.base);
   recBadge('recBadgeR', _ch.rover);
@@ -610,33 +625,52 @@ function render(d){
       ' · 鼠标移到某颗星垂直区间即弹出全部信号读数。';
   }
 
-  // ----- matrix (heatmap) -----
-  const roleTag=s=> s.role==='rover'
-    ? '<span class="rtag rover" title="测站">✚ 测站</span>'
-    : '<span class="rtag base" title="基站">● 基站</span>';
-  const matSats=byRole(sats,matRole).slice().sort((a,b)=> a.sat<b.sat?-1:a.sat>b.sat?1:(a.role===b.role?0:a.role==='base'?-1:1));
-  let h='<tr><th>卫星</th><th>来源</th><th>系统</th>'+sigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
-  matSats.forEach(s=>{
+  // ----- matrix: 同一卫星的基站/测站合并为一行，单元格内并列显示 base|rover CN0 -----
+  const matFiltered=byRole(sats,matRole);
+  // 聚合：按卫星 ID 合并 base / rover
+  const agg=new Map();
+  matFiltered.forEach(s=>{
+    let a=agg.get(s.sat);
+    if(!a){a={sat:s.sat,sys:s.sys,recon:null,base:null,rover:null};agg.set(s.sat,a);}
+    a[s.role]=s;
+    if(s.recon && (!a.recon||s.role==='base'))a.recon=s.recon;  // 基站 recon 优先
+    if(!a.sys)a.sys=s.sys;
+  });
+  const matRows=[...agg.values()].sort((x,y)=> x.sat<y.sat?-1:x.sat>y.sat?1:0);
+  // 信号列：仅取当前筛选下实际出现的信号，避免空列
+  const mSet=new Set(); matFiltered.forEach(s=>s.signals.forEach(g=>mSet.add(g.signal)));
+  const mSigs=SIG_ORDER.filter(s=>mSet.has(s)).concat([...mSet].filter(s=>!SIG_ORDER.includes(s)));
+  const showBoth=(matRole==='both');
+  // 单个 CN0 色块
+  const cn0span=(g,cls)=> (g&&g.cn0)
+    ? `<span class="${cls}${g.cn0<25?' crit':''}" style="background:${cn0Color(g.cn0)}" title="${g.code} · ${g.freq_mhz} MHz · CN0 ${g.cn0}">${g.cn0}</span>`
+    : `<span class="${cls} empty">-</span>`;
+  let h='<tr><th>卫星</th><th>系统</th>'+mSigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
+  matRows.forEach(a=>{
     let rc=''; let badge='';
-    if(s.recon){
-      if(s.recon.sys==='BDS-2')badge='<span class="badge b2">BDS-2</span>';
-      else if(s.recon.sys==='BDS-3')badge='<span class="badge b3">BDS-3</span>';
-      const lv=s.recon.anomalies.map(a=>a.level);
+    if(a.recon){
+      if(a.recon.sys==='BDS-2')badge='<span class="badge b2">BDS-2</span>';
+      else if(a.recon.sys==='BDS-3')badge='<span class="badge b3">BDS-3</span>';
+      const lv=a.recon.anomalies.map(x=>x.level);
       if(lv.includes('error'))rc='brow-err'; else if(lv.includes('warn'))rc='brow-warn';
     }
-    const sysn=SYS_NAME[s.sys]||s.sys||'–';
-    const sdot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${SYS_COLOR[s.sys]||'#8b9bb0'}"></span>`;
-    const key=s.role+':'+s.sat;
-    h+=`<tr class="${rc}" data-key="${key}" onmouseenter="hoverSat('${key}',true)" onmouseleave="hoverSat('${key}',false)"><td class="sat">${s.sat}</td><td style="white-space:nowrap">${roleTag(s)}</td><td style="text-align:left;white-space:nowrap">${sdot}${sysn}${s.recon?' '+s.recon.orbit:''}${badge}</td>`;
-    sigs.forEach(sig=>{const g=s.signals.find(x=>x.signal===sig);
-      if(g&&g.cn0){
-        const crit=g.cn0<25?' cn0-crit':'';
-        h+=`<td class="cn0${crit}" style="background:${cn0Color(g.cn0)};color:#06121f;font-weight:600" title="${g.code} · ${g.freq_mhz} MHz">${g.cn0}</td>`;
-      } else h+='<td style="color:#5f6b7a">-</td>';});
+    const sysn=SYS_NAME[a.sys]||a.sys||'–';
+    const sdot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:${SYS_COLOR[a.sys]||'#8b9bb0'}"></span>`;
+    h+=`<tr class="${rc}" data-sat="${a.sat}" onmouseenter="hoverSat('${a.sat}',true)" onmouseleave="hoverSat('${a.sat}',false)"><td class="sat">${a.sat}</td><td style="text-align:left;white-space:nowrap">${sdot}${sysn}${a.recon?' '+a.recon.orbit:''}${badge}</td>`;
+    mSigs.forEach(sig=>{
+      const bg=a.base&&a.base.signals.find(x=>x.signal===sig);
+      const rg=a.rover&&a.rover.signals.find(x=>x.signal===sig);
+      if(showBoth){
+        h+=`<td class="cn0c"><div class="cn0split">${cn0span(bg,'b')}${cn0span(rg,'r')}</div></td>`;
+      }else{
+        const g=(matRole==='rover')?rg:bg;
+        h+=`<td class="cn0c"><div class="cn0split">${cn0span(g,'')}</div></td>`;
+      }
+    });
     h+='</tr>';
   });
-  if(!matSats.length)
-    h+=`<tr><td colspan="${sigs.length+3}" style="border:none"><div class="mat-empty">⚙ ${sats.length?'该通道暂无卫星':'等待接入 NTRIP 数据源…'}</div></td></tr>`;
+  if(!matRows.length)
+    h+=`<tr><td colspan="${mSigs.length+2}" style="border:none"><div class="mat-empty">⚙ ${sats.length?'该通道暂无卫星':'等待接入 NTRIP 数据源…'}</div></td></tr>`;
   document.getElementById('matrix').innerHTML=h;
 
   // ----- anomalies: aggregate satellites by (level,msg) into tag boxes -----
@@ -695,19 +729,23 @@ function skyLabels(items){
   });
   return out;
 }
-// hover highlight ring (pulsing) for the satellite linked from the matrix
+// hover highlight ring (pulsing) — 高亮该卫星基站+测站两个标记
 function skyHL(pos){
-  const k=window.__skyHover; if(!k||!pos[k])return '';
-  const p=pos[k], f=v=>v.toFixed(1);
-  return `<g id="skHL"><circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.outer+5)}" fill="none" stroke="#ffd166" stroke-width="2"/>`+
-         `<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.outer+11)}" fill="none" stroke="#ffd166" stroke-width="0.8" opacity=".45"/></g>`;
+  const k=window.__skyHover; if(!k)return '';
+  const f=v=>v.toFixed(1); let out='';
+  Object.keys(pos).forEach(key=>{
+    if(key.split(':')[1]!==k)return;
+    const p=pos[key];
+    out+=`<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.outer+5)}" fill="none" stroke="#ffd166" stroke-width="2"/>`+
+         `<circle cx="${f(p.x)}" cy="${f(p.y)}" r="${f(p.outer+11)}" fill="none" stroke="#ffd166" stroke-width="0.8" opacity=".45"/>`;
+  });
+  return out?`<g id="skHL">${out}</g>`:'';
 }
 function drawSky(sats){
   const svg=document.getElementById('sky'); if(!svg)return; const cx=160,cy=160,R=150;
   const hasAzEl=sats.some(s=>s.el!=null&&s.az!=null);
   const baseSet=new Set(sats.filter(s=>s.role==='base').map(s=>s.sat));
   const baseRad={}; sats.filter(s=>s.role==='base').forEach(s=>baseRad[s.sat]=skyRad(s.maxcn0||25));
-  const anomOf=s=> s.recon&&s.recon.anomalies.some(a=>a.level!=='info');
   const pos={}, labels=[];
   // build one satellite marker (no label); register position + label item
   function emit(x,y,s,extra){
@@ -723,7 +761,6 @@ function drawSky(sats){
     }else{
       m=`<circle cx="${xf}" cy="${yf}" r="${f(rad)}" fill="${color}" stroke="#0f1419" stroke-width="1"><title>${tip}</title></circle>`;
     }
-    if(anomOf(s)&&cn0<40)m+=`<circle cx="${xf}" cy="${yf}" r="${f(outer+2.2)}" fill="none" stroke="#f85149" stroke-width="1.2"/>`;
     pos[key]={x,y,outer};
     if(s.role==='base'||!baseSet.has(s.sat)) labels.push({x,y:y-outer-2.5,y0:y-outer-2.5,text:s.sat});
     return `<g class="skm" data-key="${key}">${m}</g>`;
@@ -751,7 +788,7 @@ function drawSky(sats){
       const r=R*(90-s.el)/90, a=s.az*Math.PI/180;
       g+=emit(cx+r*Math.sin(a), cy-r*Math.cos(a), s, `az=${s.az}° el=${s.el}°`);
     });
-    if(note)note.textContent='真实方位/高度角（测站共用基站坐标）。● 基站 / ✚ 测站，点大小∝CN0，颜色=星座；橙色虚线 外圈10°/内圈75° 为常用区间；红圈=北斗重构异常(弱信号)。滚轮缩放、拖拽平移。';
+    if(note)note.textContent='真实方位/高度角（测站共用基站坐标）。● 基站 / ✚ 测站，点大小∝CN0，颜色=星座；橙色虚线 外圈10°/内圈75° 为常用区间。滚轮缩放、拖拽平移。';
   }else{
     const bySys={}; sats.forEach(s=>{(bySys[s.sys]=bySys[s.sys]||[]).push(s);});
     const syss=Object.keys(bySys); let base=0;
@@ -781,13 +818,14 @@ let skSc=1, skTx=0, skTy=0; window.__skyHover=null;
 function applySkyTransform(){const g=document.getElementById('skyContent'); if(g)g.setAttribute('transform',`translate(${skTx} ${skTy}) scale(${skSc})`);}
 function skyReset(){skSc=1;skTx=0;skTy=0;applySkyTransform();}
 function svgPt(evt){const svg=document.getElementById('sky');if(!svg||!svg.getScreenCTM)return{x:0,y:0};const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;const m=svg.getScreenCTM();return m?pt.matrixTransform(m.inverse()):{x:0,y:0};}
-// matrix row -> highlight satellite in skyplot
-function hoverSat(key,on){ window.__skyHover= on?key:null; if(window.__lastData) drawSky(byRole(window.__lastData.sats,skyRole)); }
-// skyplot marker -> highlight + scroll matrix row
+// matrix row (按卫星) -> highlight satellite in skyplot (含基站+测站)
+function hoverSat(sat,on){ window.__skyHover= on?sat:null; if(window.__lastData) drawSky(byRole(window.__lastData.sats,skyRole)); }
+// skyplot marker -> highlight + scroll merged matrix row
 function setHoverRow(key){
   document.querySelectorAll('#matrix tr.rowhl').forEach(r=>r.classList.remove('rowhl'));
   if(!key)return;
-  const r=document.querySelector('#matrix tr[data-key="'+key+'"]');
+  const sat=key.split(':')[1];
+  const r=document.querySelector('#matrix tr[data-sat="'+sat+'"]');
   if(r){r.classList.add('rowhl'); r.scrollIntoView({block:'nearest'});}
 }
 (function initSky(){

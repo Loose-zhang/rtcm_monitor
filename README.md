@@ -23,7 +23,7 @@ bash run.sh                # 自动装依赖并启动
 pip install -r requirements.txt
 python3 app.py
 ```
-浏览器打开 **http://127.0.0.1:8765**
+浏览器打开 **http://127.0.0.1:7999**
 
 ### 接入 NTRIP
 在“数据源 → NTRIP 接入”填 Caster 地址 / 端口 / 挂载点 / 用户名 / 密码，点“连接”。
