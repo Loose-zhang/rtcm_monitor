@@ -235,10 +235,31 @@ def build_skyplot_html(title, points, role=None):
 <style>body{{margin:0;background:#0b0f14;color:#e6edf3;
 font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
 display:flex;flex-direction:column;align-items:center;padding:18px}}
-h1{{font-size:16px;margin:0 0 2px}} .sub{{color:#8b9bb0;font-size:12px;margin-bottom:12px}}
-svg{{max-width:96vw;height:auto;background:#0f1419;border:1px solid #2c3a48;border-radius:10px}}</style>
+h1{{font-size:16px;margin:0 0 2px}} .sub{{color:#8b9bb0;font-size:12px;margin-bottom:10px}}
+.wrap{{position:relative;width:min(96vw,720px)}}
+button{{position:absolute;top:8px;right:8px;z-index:2;background:#222c38;color:#8b9bb0;
+border:1px solid #2c3a48;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}}
+.hint{{position:absolute;top:11px;left:12px;z-index:2;color:#8b9bb0;font-size:11px;pointer-events:none}}
+svg{{width:100%;height:auto;background:#0f1419;border:1px solid #2c3a48;border-radius:10px;
+cursor:grab;touch-action:none;user-select:none;display:block}}
+svg.grabbing{{cursor:grabbing}}</style>
 </head><body><h1>{title} · 卫星轨迹叠加</h1><div class="sub">{sub}</div>
-<svg viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg">{''.join(svg)}</svg>
+<div class="wrap"><button id="rst">复位</button><span class="hint">滚轮缩放 · 拖拽平移</span>
+<svg id="sky" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><g id="c">{''.join(svg)}</g></svg></div>
+<script>(function(){{var svg=document.getElementById('sky'),g=document.getElementById('c'),
+sc=1,tx=0,ty=0;
+function ap(){{g.setAttribute('transform','translate('+tx+' '+ty+') scale('+sc+')');}}
+function pt(e){{var p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;
+var m=svg.getScreenCTM();return m?p.matrixTransform(m.inverse()):{{x:0,y:0}};}}
+svg.addEventListener('wheel',function(e){{e.preventDefault();var P=pt(e),
+f=e.deltaY<0?1.15:1/1.15,ns=Math.min(10,Math.max(1,sc*f));
+tx=P.x-(ns/sc)*(P.x-tx);ty=P.y-(ns/sc)*(P.y-ty);sc=ns;ap();}},{{passive:false}});
+var pan=false,ps=null;
+svg.addEventListener('mousedown',function(e){{if(e.button!==0)return;pan=true;ps=pt(e);svg.classList.add('grabbing');}});
+window.addEventListener('mousemove',function(e){{if(!pan)return;var P=pt(e);tx+=P.x-ps.x;ty+=P.y-ps.y;ps=P;ap();}});
+window.addEventListener('mouseup',function(){{pan=false;svg.classList.remove('grabbing');}});
+document.getElementById('rst').addEventListener('click',function(){{sc=1;tx=0;ty=0;ap();}});
+}})();</script>
 </body></html>"""
 
 

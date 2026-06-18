@@ -419,7 +419,9 @@
           <button onclick="doExport()">导出 ZIP + 服务端</button>
         </div>
         <div class="note" id="expStatus" style="min-height:16px"></div>
-        <div class="skywrap" id="expSkyWrap" style="height:46vh;margin-top:8px;cursor:default">
+        <div class="skywrap" id="expSkyWrap" style="height:46vh;margin-top:8px;touch-action:none">
+          <button class="skybtn" onclick="expSkyReset()" style="position:absolute;top:6px;right:6px;z-index:2">复位</button>
+          <span class="note" style="position:absolute;top:9px;left:10px;z-index:2;margin:0;pointer-events:none">滚轮缩放 · 拖拽平移</span>
           <svg id="expSky" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block"></svg>
         </div>
         <div class="legend" id="expLegend" style="margin-top:8px"></div>
@@ -853,7 +855,7 @@ function drawSky(sats){
 let skSc=1, skTx=0, skTy=0; window.__skyHover=null;
 function applySkyTransform(){const g=document.getElementById('skyContent'); if(g)g.setAttribute('transform',`translate(${skTx} ${skTy}) scale(${skSc})`);}
 function skyReset(){skSc=1;skTx=0;skTy=0;applySkyTransform();}
-function svgPt(evt){const svg=document.getElementById('sky');if(!svg||!svg.getScreenCTM)return{x:0,y:0};const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;const m=svg.getScreenCTM();return m?pt.matrixTransform(m.inverse()):{x:0,y:0};}
+function svgPt(evt,svgId){const svg=document.getElementById(svgId||'sky');if(!svg||!svg.getScreenCTM)return{x:0,y:0};const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;const m=svg.getScreenCTM();return m?pt.matrixTransform(m.inverse()):{x:0,y:0};}
 // matrix row (按卫星) -> highlight satellite in skyplot (含基站+测站)
 function hoverSat(sat,on){ window.__skyHover= on?sat:null; if(window.__lastData) drawSky(byRole(window.__lastData.sats,skyRole)); }
 // skyplot marker -> highlight + scroll merged matrix row
@@ -880,6 +882,7 @@ function setHoverRow(key){
 
 // ---------- 录制导出 / 轨迹叠加 (项4) ----------
 let expMode='last', expHours=24;
+let eSc=1, eTx=0, eTy=0;   // 叠加图缩放/平移状态
 function setExpMode(m){expMode=m;
   document.getElementById('expTabLast').classList.toggle('on',m==='last');
   document.getElementById('expTabRange').classList.toggle('on',m==='range');
@@ -973,12 +976,27 @@ function drawExpSky(channels){
       g+=`<text x="${last[0].toFixed(1)}" y="${(last[1]-5).toFixed(1)}" fill="#c5d1e0" font-size="8" text-anchor="middle">${sat}</text>`;
     });
   });
-  svg.innerHTML=g;
+  // 内容包进可缩放/平移的 transform 组（保留当前视图变换）
+  svg.innerHTML=`<g id="expSkyContent" transform="translate(${eTx} ${eTy}) scale(${eSc})">${g}</g>`;
   document.getElementById('expLegend').innerHTML=
     '<span class="it"><span class="sw" style="background:#8b9bb0;border-radius:50%"></span>实线 / ● 末点 = 基站</span>'+
     '<span class="it"><span class="sw" style="background:#8b9bb0"></span>虚线 / ✚ 末点 = 测站</span>'+
     '<span class="it">颜色 = 星座 · 折线 = 时段内轨迹</span>';
 }
+function applyExpTransform(){const g=document.getElementById('expSkyContent');
+  if(g)g.setAttribute('transform',`translate(${eTx} ${eTy}) scale(${eSc})`);}
+function expSkyReset(){eSc=1;eTx=0;eTy=0;applyExpTransform();}
+(function initExpSky(){
+  const wrap=document.getElementById('expSkyWrap'), svg=document.getElementById('expSky');
+  if(!wrap||!svg)return;
+  wrap.addEventListener('wheel',e=>{e.preventDefault();const P=svgPt(e,'expSky');
+    const f=e.deltaY<0?1.15:1/1.15, ns=Math.min(10,Math.max(1,eSc*f));
+    eTx=P.x-(ns/eSc)*(P.x-eTx); eTy=P.y-(ns/eSc)*(P.y-eTy); eSc=ns; applyExpTransform();},{passive:false});
+  let pan=false, ps=null;
+  wrap.addEventListener('mousedown',e=>{if(e.button!==0)return;pan=true;ps=svgPt(e,'expSky');wrap.classList.add('grabbing');});
+  window.addEventListener('mousemove',e=>{if(!pan)return;const P=svgPt(e,'expSky');eTx+=P.x-ps.x;eTy+=P.y-ps.y;ps=P;applyExpTransform();});
+  window.addEventListener('mouseup',()=>{pan=false;wrap.classList.remove('grabbing');});
+})();
 
 // ---------- SSE ----------
 initCharts();
