@@ -229,18 +229,12 @@ def _proj(az, el, cx, cy, R):
 
 
 def build_skyplot_html(title, points, role=None):
-    """用区间内的卫星位置点生成自包含轨迹叠加天空图 (静态 SVG + HTML)。
+    """用区间内的卫星位置点生成自包含「按周期回放」天空图 (SVG + HTML)。
 
-    每颗卫星 24h 的位置点按时间连成轨迹折线, 颜色按星座; 末点画标记并标星号,
-    base 用圆点、rover 用十字。"""
+    点数据内嵌为 JSON; 时间轴每格=一个 10min 周期, 只画该周期的卫星位置,
+    拖动/播放可看卫星行进与 CN0 变化。颜色按星座、大小按 CN0, base=实心圆●、rover=十字✚。"""
     cx = cy = 320
     R = 300
-    # group by sat
-    bysat = {}
-    for t, sat, sysc, az, el, cn0 in points:
-        if el is None or el < 0:
-            continue
-        bysat.setdefault(sat, {"sys": sysc, "pts": []})["pts"].append((t, az, el, cn0))
     svg = []
     # background rings + grid (10°/30°/60°/75° + N/E/S/W)
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R}" fill="#0f1419" stroke="#2c3a48"/>')
@@ -257,36 +251,19 @@ def build_skyplot_html(title, points, role=None):
                       ("S", cx, cy+R-6), ("W", cx-R+10, cy+4)):
         svg.append(f'<text x="{x}" y="{y}" fill="#8b9bb0" font-size="14" '
                    f'text-anchor="middle">{txt}</text>')
-    # trajectories
-    labels = []
-    for sat, info in sorted(bysat.items()):
-        color = _SYS_COLOR.get(info["sys"], "#8b9bb0")
-        pts = info["pts"]
-        xy = [_proj(az, el, cx, cy, R) for (_t, az, el, _c) in pts]
-        if len(xy) > 1:
-            d = " ".join(("M" if i == 0 else "L") + f"{x:.1f} {y:.1f}"
-                         for i, (x, y) in enumerate(xy))
-            dash = ' stroke-dasharray="4 3"' if role == "rover" else ""
-            svg.append(f'<path d="{d}" fill="none" stroke="{color}" '
-                       f'stroke-width="1.6" opacity="0.85"{dash}><title>{sat}</title></path>')
-        # mark every sampled point lightly, last point emphasized
-        for x, y in xy:
-            svg.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="1.6" fill="{color}" opacity="0.55"/>')
-        lx, ly = xy[-1]
-        if role == "rover":
-            svg.append(f'<path d="M{lx-4:.1f} {ly:.1f}H{lx+4:.1f} M{lx:.1f} {ly-4:.1f}V{ly+4:.1f}" '
-                       f'stroke="{color}" stroke-width="2" stroke-linecap="round"/>')
-        else:
-            svg.append(f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="3.5" fill="{color}" '
-                       f'stroke="#0f1419" stroke-width="1"/>')
-        labels.append((lx, ly, sat, color))
-    for lx, ly, sat, color in labels:
-        svg.append(f'<text x="{lx:.1f}" y="{ly-6:.1f}" fill="#c5d1e0" font-size="11" '
-                   f'text-anchor="middle">{sat}</text>')
-    nsat = len(bysat)
-    npts = sum(len(v["pts"]) for v in bysat.values())
-    sub = (f'{nsat} 颗卫星 · {npts} 个轨迹点 · 外圈10°/内圈75° 橙色虚线为常用高度角'
-           + (' · ✚ 末点=测站' if role == 'rover' else ' · ● 末点=基站'))
+    bg = ''.join(svg)
+    # 内嵌点数据 (仅保留有效高度角)，由 JS 按周期渲染
+    data = [[int(t), sat, sysc, round(az, 2), round(el, 2),
+             (round(cn0, 1) if cn0 is not None else None)]
+            for (t, sat, sysc, az, el, cn0) in points
+            if el is not None and el >= 0]
+    data_json = json.dumps(data, separators=(",", ":"))
+    color_json = json.dumps(_SYS_COLOR, separators=(",", ":"))
+    role_js = "rover" if role == "rover" else "base"
+    nsat = len({d[1] for d in data})
+    nper = len({d[0] // 600 for d in data})
+    sub = (f'{nsat} 颗卫星 · {nper} 个周期 · 点大小=载噪比CN0 · 外圈10°/内圈75° 橙色虚线为常用高度角'
+           + (' · ✚ 测站' if role == 'rover' else ' · ● 基站'))
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <title>{title} · 轨迹叠加天空图</title>
 <style>body{{margin:0;background:#0b0f14;color:#e6edf3;
@@ -294,20 +271,60 @@ font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
 display:flex;flex-direction:column;align-items:center;padding:18px}}
 h1{{font-size:16px;margin:0 0 2px}} .sub{{color:#8b9bb0;font-size:12px;margin-bottom:10px}}
 .wrap{{position:relative;width:min(96vw,720px)}}
-button{{position:absolute;top:8px;right:8px;z-index:2;background:#222c38;color:#8b9bb0;
+#rst{{position:absolute;top:8px;right:8px;z-index:2;background:#222c38;color:#8b9bb0;
 border:1px solid #2c3a48;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer}}
 .hint{{position:absolute;top:11px;left:12px;z-index:2;color:#8b9bb0;font-size:11px;pointer-events:none}}
 svg{{width:100%;height:auto;background:#0f1419;border:1px solid #2c3a48;border-radius:10px;
 cursor:grab;touch-action:none;user-select:none;display:block}}
-svg.grabbing{{cursor:grabbing}}</style>
-</head><body><h1>{title} · 卫星轨迹叠加</h1><div class="sub">{sub}</div>
+svg.grabbing{{cursor:grabbing}}
+.tl{{display:flex;align-items:center;gap:10px;width:min(96vw,720px);margin-top:10px}}
+.tl input[type=range]{{flex:1}}
+.tl button{{background:#222c38;color:#8b9bb0;border:1px solid #2c3a48;border-radius:6px;
+padding:4px 12px;font-size:13px;cursor:pointer}}
+.tl span{{color:#8b9bb0;font-size:12px;white-space:nowrap;min-width:170px;text-align:right;
+font-variant-numeric:tabular-nums}}</style>
+</head><body><h1>{title} · 卫星轨迹回放</h1><div class="sub">{sub}</div>
 <div class="wrap"><button id="rst">复位</button><span class="hint">滚轮缩放 · 拖拽平移</span>
-<svg id="sky" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><g id="c">{''.join(svg)}</g></svg></div>
-<script>(function(){{var svg=document.getElementById('sky'),g=document.getElementById('c'),
-sc=1,tx=0,ty=0;
+<svg id="sky" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg"><g id="c">{bg}<g id="marks"></g></g></svg></div>
+<div class="tl"><button id="play">▶</button>
+<input id="tl" type="range" min="0" max="0" value="0" step="1">
+<span id="tlab"></span></div>
+<script>(function(){{
+var svg=document.getElementById('sky'),g=document.getElementById('c'),marks=document.getElementById('marks'),
+sc=1,tx=0,ty=0,cx=320,cy=320,R=300,ROLE="{role_js}",PTS={data_json},SYS={color_json};
 function ap(){{g.setAttribute('transform','translate('+tx+' '+ty+') scale('+sc+')');}}
 function pt(e){{var p=svg.createSVGPoint();p.x=e.clientX;p.y=e.clientY;
 var m=svg.getScreenCTM();return m?p.matrixTransform(m.inverse()):{{x:0,y:0}};}}
+function proj(az,el){{var r=R*(90-el)/90,a=az*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)];}}
+function rad(c){{if(c==null)return 3;var v=Math.max(20,Math.min(50,c));return 3+(v-20)/30*9;}}
+function esc(s){{return String(s).replace(/[&<>]/g,function(m){{return {{'&':'&amp;','<':'&lt;','>':'&gt;'}}[m];}});}}
+var pset={{}};PTS.forEach(function(p){{pset[Math.floor(p[0]/600)]=1;}});
+var periods=Object.keys(pset).map(Number).sort(function(a,b){{return a-b;}});
+function render(idx){{
+  if(!periods.length){{marks.innerHTML='';return;}}
+  idx=Math.max(0,Math.min(periods.length-1,idx|0));
+  var pk=periods[idx],seen={{}},out='';
+  PTS.forEach(function(p){{var t=p[0],sat=p[1],sys=p[2],az=p[3],el=p[4],cn0=p[5];
+    if(Math.floor(t/600)!==pk)return;
+    var color=SYS[sys]||'#8b9bb0',xy=proj(az,el),x=xy[0],y=xy[1],r=rad(cn0),
+      tip=esc(sat)+(cn0!=null?' · '+Math.round(cn0)+' dBHz':'');
+    if(ROLE==='rover'){{var L=r+2;
+      out+='<path d="M'+(x-L).toFixed(1)+' '+y.toFixed(1)+'H'+(x+L).toFixed(1)+' M'+x.toFixed(1)+' '+(y-L).toFixed(1)+'V'+(y+L).toFixed(1)+'" stroke="'+color+'" stroke-width="2" stroke-linecap="round"><title>'+tip+'</title></path>';
+    }}else out+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+color+'" stroke="#0f1419" stroke-width="1"><title>'+tip+'</title></circle>';
+    if(!seen[sat]){{seen[sat]=1;out+='<text x="'+x.toFixed(1)+'" y="'+(y-r-3).toFixed(1)+'" fill="#c5d1e0" font-size="11" text-anchor="middle">'+esc(sat)+'</text>';}}
+  }});
+  marks.innerHTML=out;
+  var d=new Date(pk*600*1000);
+  document.getElementById('tlab').textContent=d.toLocaleString('zh-CN',{{hour12:false}})+' · '+(idx+1)+'/'+periods.length;
+  var sl=document.getElementById('tl');if(+sl.value!==idx)sl.value=idx;
+}}
+var sl=document.getElementById('tl');sl.max=Math.max(0,periods.length-1);sl.value=Math.max(0,periods.length-1);
+sl.addEventListener('input',function(){{render(+this.value);}});
+var timer=null,pb=document.getElementById('play');
+pb.addEventListener('click',function(){{if(timer){{clearInterval(timer);timer=null;pb.textContent='▶';return;}}
+  if(!periods.length)return;pb.textContent='⏸';
+  timer=setInterval(function(){{var i=(+sl.value)+1;if(i>periods.length-1)i=0;render(i);}},800);}});
+render(periods.length?periods.length-1:0);
 svg.addEventListener('wheel',function(e){{e.preventDefault();var P=pt(e),
 f=e.deltaY<0?1.15:1/1.15,ns=Math.min(10,Math.max(1,sc*f));
 tx=P.x-(ns/sc)*(P.x-tx);ty=P.y-(ns/sc)*(P.y-ty);sc=ns;ap();}},{{passive:false}});
