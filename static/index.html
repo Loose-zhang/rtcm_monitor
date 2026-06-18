@@ -418,6 +418,10 @@
           <button class="ghost" onclick="previewTrack()">预览轨迹叠加</button>
           <button onclick="doExport()">导出 ZIP + 服务端</button>
         </div>
+        <div class="btnrow" style="margin-top:8px">
+          <button class="ghost" onclick="document.getElementById('expImport').click()" title="导入离线保存的 _track.csv 或导出的 zip，直接在下方叠加显示">导入轨迹</button>
+        </div>
+        <input id="expImport" type="file" accept=".csv,.zip" style="display:none" onchange="importTrack(this)">
         <div class="note" id="expStatus" style="min-height:16px"></div>
         <div class="skywrap" id="expSkyWrap" style="height:46vh;margin-top:8px;touch-action:none">
           <button class="skybtn" onclick="expSkyReset()" style="position:absolute;top:6px;right:6px;z-index:2">复位</button>
@@ -941,6 +945,19 @@ async function doExport(){
     st.innerHTML=`✓ 已导出 ${j.total_periods} 周期 · ZIP 已开始下载<br>服务端目录：<code>${escHtml(j.server_dir)}</code><br>${escHtml(chs)}`;
     previewTrack();
   }catch(e){st.textContent='导出失败: '+e;}
+}
+async function importTrack(inp){
+  const file=inp.files&&inp.files[0]; if(!file)return;
+  const st=document.getElementById('expStatus'); st.textContent='正在导入 '+file.name+' …';
+  const fd=new FormData(); fd.append('file',file);
+  try{
+    const j=await (await fetch('/api/import_track',{method:'POST',body:fd})).json();
+    if(!j.ok){st.textContent='导入失败: '+(j.error||'');inp.value='';return;}
+    expSkyReset(); drawExpSky(j.channels||{});
+    const n=Object.values(j.channels||{}).reduce((a,c)=>a+c.npoints,0);
+    st.textContent=`已导入 ${file.name} · ${n} 个轨迹点（${Object.keys(j.channels).length} 个通道）。`;
+  }catch(e){st.textContent='导入失败: '+e;}
+  inp.value='';   // 允许再次选同一文件
 }
 function drawExpSky(channels){
   const svg=document.getElementById('expSky'); if(!svg)return;

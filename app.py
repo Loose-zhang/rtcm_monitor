@@ -633,6 +633,22 @@ def api_export_zip():
     return send_from_directory(folder, name, as_attachment=True)
 
 
+@app.route("/api/import_track", methods=["POST"])
+def api_import_track():
+    """导入离线保存的轨迹文件 (_track.csv 或导出 zip), 返回轨迹点供页面叠加。"""
+    f = request.files.get("file")
+    if not f:
+        return {"ok": False, "error": "未收到文件"}, 400
+    try:
+        channels = exp.import_tracks(f.filename, f.read())
+        if not channels or all(v["npoints"] == 0 for v in channels.values()):
+            return {"ok": False,
+                    "error": "未解析到轨迹点 (需 _track.csv 或导出的 zip)"}, 400
+        return {"ok": True, "channels": channels}
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}, 400
+
+
 @app.route("/stream")
 def stream():
     sid = request.args.get("sid")

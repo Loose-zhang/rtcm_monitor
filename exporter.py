@@ -137,6 +137,63 @@ def read_track_points(base_dir, sid, start_ts, end_ts):
     return res
 
 
+# --------------------------------------------------------------------------- import (反向: 解析离线轨迹文件)
+def _role_from_name(s):
+    s = (s or "").lower()
+    return "rover" if ("rover" in s or "测" in s) else "base"
+
+
+def parse_track_csv(text):
+    """解析导出的 `_track.csv` (time_utc,sat,sys,prn,az_deg,el_deg,cn0) -> 轨迹点。"""
+    pts = []
+    for ln in text.splitlines()[1:]:          # 跳表头
+        f = ln.split(",")
+        if len(f) < 7:
+            continue
+        t, sat, sysc, _prn, az, el, cn0 = f[:7]
+        if not az or not el:
+            continue
+        try:
+            pts.append([_parse_iso(t) or 0, sat, sysc, float(az), float(el),
+                        float(cn0) if cn0 else None])
+        except Exception:
+            pass
+    pts.sort(key=lambda r: (r[1], r[0]))
+    return pts
+
+
+def import_tracks(filename, data):
+    """从上传的 `_track.csv` 或导出 zip 解析轨迹, 返回与 read_track_points 同形的
+    {key: {role, mount, npoints, points}}。zip 内按 manifest.json 还原 role/挂载点。"""
+    name = (filename or "").lower()
+    res = {}
+    if name.endswith(".zip"):
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            rolemap = {}
+            try:
+                mani = json.loads(zf.read("manifest.json").decode("utf-8"))
+                for c in mani.get("channels", []):
+                    rolemap[c.get("folder")] = (c.get("role"), c.get("mount"))
+            except Exception:
+                pass
+            for n in zf.namelist():
+                if not n.endswith("_track.csv"):
+                    continue
+                folder = n.split("/")[0] if "/" in n else n
+                role, mount = rolemap.get(folder, (None, folder))
+                pts = parse_track_csv(zf.read(n).decode("utf-8", "replace"))
+                res[folder] = {"role": role or _role_from_name(folder),
+                               "mount": mount or folder,
+                               "npoints": len(pts), "points": pts}
+    else:
+        key = os.path.basename(filename or "imported")
+        body = data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+        pts = parse_track_csv(body)
+        res[key] = {"role": _role_from_name(name), "mount": key,
+                    "npoints": len(pts), "points": pts}
+    return res
+
+
 # --------------------------------------------------------------------------- merged artifacts
 def _merge_rtcm(cdir, periods):
     buf = bytearray()

@@ -68,8 +68,13 @@ python3 app.py
   （自包含轨迹叠加图，浏览器直接打开）。同时写到服务端 `exports/<sid>/<区间>/`
   归档，并打包成 ZIP 由浏览器下载。
 
+- **导入轨迹**：「导入轨迹」按钮可载入离线保存的 `_track.csv` 或整个导出 ZIP，
+  无需原始录制即可在叠加图上重新呈现（ZIP 会按内部 `manifest.json` 还原基站 /
+  测站样式）。页面内叠加图与导出的 `_skyplot.html` 均支持滚轮缩放 / 拖拽平移 / 复位。
+
 导出 API：`GET /api/recordings`（含可导出范围）、`GET /api/track`、
-`POST /api/export`、`GET /api/export_zip`。`recordings/`、`exports/` 均已 gitignore。
+`POST /api/export`、`GET /api/export_zip`、`POST /api/import_track`。
+`recordings/`、`exports/` 均已 gitignore。
 
 ## 说明与后续
 - 当前流若只含观测(MSM)，**天空图无法给真实方位/高度角**；接入星历报文
