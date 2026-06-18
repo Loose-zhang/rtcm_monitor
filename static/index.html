@@ -91,6 +91,11 @@
   .cbody.hidden{display:none}
   .summary{padding:8px 12px;border-top:1px solid var(--line);background:var(--card2);
            font-size:11.5px;color:var(--mut);display:flex;align-items:center;gap:7px}
+  .recbadge{margin-left:auto;font-size:10.5px;font-weight:600;white-space:nowrap;
+            padding:1px 8px;border-radius:10px;color:#cdebd6;
+            background:rgba(38,170,90,.16);border:1px solid rgba(38,170,90,.45)}
+  .recbadge.err{color:#f2c2c2;background:rgba(200,60,60,.16);border-color:rgba(200,60,60,.5)}
+  .recbadge.hidden{display:none}
 
   /* ---------- connection form ---------- */
   #conn,#conn2,#connR{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
@@ -253,7 +258,7 @@
         </div>
         <div class="note">基站(base)通道 · 凭据只发送到本机后端再转发给 caster，不写入磁盘。天空图以圆点 ● 表示。</div>
       </div>
-      <div class="summary" id="srcSummary"><span id="srcDot" class="live-dot"><i></i></span><span id="srcSummaryTxt">未连接</span></div>
+      <div class="summary" id="srcSummary"><span id="srcDot" class="live-dot"><i></i></span><span id="srcSummaryTxt">未连接</span><span id="recBadge" class="recbadge hidden" title="录制底座：每10分钟保留一个完整历元+卫星位置"></span></div>
     </section>
 
     <!-- rover data source -->
@@ -283,7 +288,7 @@
         </div>
         <div class="note">测站(rover)通道 · 方位/高度角共用基站坐标。天空图以十字 ✚ 表示。</div>
       </div>
-      <div class="summary" id="srcSummaryR"><span id="srcDotR" class="live-dot"><i></i></span><span id="srcSummaryTxtR">未连接</span></div>
+      <div class="summary" id="srcSummaryR"><span id="srcDotR" class="live-dot"><i></i></span><span id="srcSummaryTxtR">未连接</span><span id="recBadgeR" class="recbadge hidden" title="录制底座：每10分钟保留一个完整历元+卫星位置"></span></div>
     </section>
 
     <!-- ephemeris -->
@@ -543,6 +548,16 @@ function render(d){
   document.getElementById('srcSummaryTxt').textContent=_bs.msg||'未连接';
   const sdr=document.getElementById('srcDotR'); if(sdr)sdr.className='live-dot'+dotOf(_rs);
   const sttR=document.getElementById('srcSummaryTxtR'); if(sttR)sttR.textContent=_rs.msg||'未连接';
+  // recording badges (录制底座: 每10分钟一个完整历元)
+  const recBadge=(elId,ch)=>{const b=document.getElementById(elId);if(!b)return;
+    const r=ch&&ch.rec;
+    if(!r||!r.recording){b.classList.add('hidden');return;}
+    b.classList.remove('hidden');
+    const cur=r.cur_period?` · 当前 ${r.cur_period}`:'';
+    b.textContent=`● 录制中 · 已存 ${r.periods} 周期${cur}`;
+    b.classList.toggle('err', !!r.error);};
+  recBadge('recBadge', _ch.base);
+  recBadge('recBadgeR', _ch.rover);
 
   // KPIs (dim numbers when no live data)
   sStation.textContent=d.stats.station??'–';

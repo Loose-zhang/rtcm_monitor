@@ -10,6 +10,7 @@ Run:  python app.py   ->  open http://127.0.0.1:8765
 """
 import argparse
 import json
+import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -19,8 +20,11 @@ from flask import Flask, Response, request, send_from_directory
 import rtcm_decode as rd
 import bds_recon as br
 import gnss_orbit as orb
+import recorder as rec
 
 STALE_SEC = 15.0          # drop a signal not refreshed for this long
+# 录制底座落盘根目录: 项目下 recordings/ (与 app.py 同级)
+RECORD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
 app = Flask(__name__, static_folder="static")
 
 
@@ -53,6 +57,7 @@ class Channel:
     def __init__(self, label):
         self.label = label                     # "基站" / "测站"
         self.source = None
+        self.recorder = None                   # 录制底座 (连接即录)
         self.status = {"state": "idle", "msg": "未连接"}
         # sat -> {sys,prn, signals:{code:{...,'ts':t}}}
         self.sats = defaultdict(lambda: {"signals": {}})
@@ -82,7 +87,8 @@ class Channel:
 
 
 class State:
-    def __init__(self):
+    def __init__(self, sid="default"):
+        self.sid = sid
         self.lock = threading.Lock()
         # two observation channels: base (基站) + rover (测站)
         self.channels = {"base": Channel("基站"), "rover": Channel("测站")}
@@ -122,6 +128,9 @@ class State:
                     e["ts"] = now
                     self.eph[e["sat"]] = e
             return
+        # 录制底座: 喂入非星历帧 (用 DF393 组装完整历元, 与主解码并行)
+        if ch.recorder is not None:
+            ch.recorder.feed(frame, msg, now)
         d = rd.decode_msm(msg)
         with self.lock:
             ch.msg_count += 1
@@ -252,8 +261,18 @@ class State:
             "msg_count": ch.msg_count,
             "bytes_in": getattr(ch.source, "bytes_in", 0) if ch.source else 0,
             "frames": getattr(ch.source, "frames", 0) if ch.source else 0,
+            "rec": ch.recorder.status() if ch.recorder else None,
         }
         return c_sats, stat, dict(sys_count)
+
+    # ---- 录制器回调: 取某通道当前卫星位置快照 (供历元落盘) ----------
+    def _sat_positions(self, role):
+        now = time.time()
+        with self.lock:
+            c_sats, _stat, _sc = self._channel_snapshot(role, now)
+        return [{"sat": s["sat"], "sys": s["sys"], "prn": s["prn"],
+                 "az": s["az"], "el": s["el"], "cn0": s["maxcn0"]}
+                for s in c_sats]
 
     # ---- snapshot for the browser
     def snapshot(self):
@@ -357,9 +376,24 @@ class State:
 
     def start(self, role, src):
         self.stop(role)
+        ch = self.channels[role]
         with self.lock:
-            self.channels[role].reset()
-        self.channels[role].source = src
+            ch.reset()
+        ch.source = src
+        # 连接即录: 为本通道建录制器 (挂载点名用于落盘目录, 文件回放回退到文件名)
+        mount = getattr(src, "mountpoint", None) \
+            or os.path.basename(getattr(src, "path", "") or "") or None
+        try:
+            ch.recorder = rec.Recorder(
+                RECORD_DIR, self.sid, role, ch.label, mount,
+                sat_snapshot_fn=lambda _r=role: self._sat_positions(_r),
+                logger=self.log)
+            with self.lock:
+                self.log("info", f"[{ch.label}] 已开始录制 -> {ch.recorder.dir}")
+        except Exception as e:
+            ch.recorder = None
+            with self.lock:
+                self.log("warn", f"[{ch.label}] 录制启动失败: {e}")
         src.start()
 
     def stop(self, role=None):
@@ -371,8 +405,17 @@ class State:
                 ch.source = None
                 with self.lock:
                     self.log("info", f"[{ch.label}] 用户手动断开连接")
+            if ch.recorder:
+                ch.recorder.close()
+                with self.lock:
+                    self.log("info", f"[{ch.label}] 已停止录制 "
+                             f"(本会话存 {ch.recorder.periods_saved} 周期)")
+                ch.recorder = None
             with self.lock:
                 ch.status = {"state": "idle", "msg": "未连接"}
+
+    def is_recording(self):
+        return any(ch.recorder is not None for ch in self.channels.values())
 
     def start_eph(self, src):
         self.stop_eph()
@@ -405,7 +448,7 @@ class SessionManager:
         with self.lock:
             st = self.states.get(sid)
             if st is None:
-                st = State()
+                st = State(sid)
                 self.states[sid] = st
             self.seen[sid] = time.time()
             return st
@@ -421,8 +464,10 @@ class SessionManager:
             time.sleep(30.0)
             now = time.time()
             with self.lock:
+                # 正在录制的会话不回收: 浏览器关页/设备休眠时也要维持 24h 连续录制
                 dead = [s for s, t in self.seen.items()
-                        if now - t > self.IDLE_SEC]
+                        if now - t > self.IDLE_SEC
+                        and not (self.states.get(s) and self.states[s].is_recording())]
                 victims = [(s, self.states.pop(s, None)) for s in dead]
                 for s in dead:
                     self.seen.pop(s, None)
@@ -512,6 +557,14 @@ def api_disconnect_eph():
     cfg = request.get_json(silent=True) or {}
     MANAGER.get(_sid_from_body(cfg)).stop_eph()
     return {"ok": True}
+
+
+@app.route("/api/recordings")
+def api_recordings():
+    """列出本会话已封存的录制周期 (验证 + 第三期导出概览)。"""
+    sid = request.args.get("sid") or "default"
+    return {"ok": True, "dir": RECORD_DIR,
+            "channels": rec.list_recordings(RECORD_DIR, sid)}
 
 
 @app.route("/stream")
