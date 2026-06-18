@@ -44,13 +44,32 @@ python3 app.py
 ## 代码结构
 | 文件 | 作用 |
 |---|---|
-| `app.py` | Flask 后端：状态聚合 + SSE 推送 + 连接 API |
+| `app.py` | Flask 后端：状态聚合 + SSE 推送 + 连接 API + 导出 API |
 | `ntrip_source.py` | NTRIP 客户端 + 文件回放（独立线程） |
 | `rtcm_decode.py` | RTCM3 CRC-24Q 分帧 + MSM 解码（CN0/频点/伪距），支持 GPS/GLO/GAL/BDS/QZSS |
 | `freq_table.py` | 各系统 频段→频率/信号名 映射 |
 | `bds_recon.py` | 北斗 2026/04 PRN 重构表 + 异常判定规则 |
 | `gnss_orbit.py` | 广播星历解码 + 卫星 ECEF 位置(开普勒) + 方位/高度角 |
+| `recorder.py` | 录制底座：每 10 分钟保留一个完整历元 + 卫星位置快照，边产生边落盘 |
+| `exporter.py` | 第三期导出：按时段合并 RTCM/轨迹、生成轨迹叠加天空图、打包 ZIP |
 | `static/index.html` | 单文件仪表盘前端（Chart.js + 原生 SVG） |
+
+## 双通道录制与导出（第三期 / 项 4）
+连接基站 / 测站 NTRIP 后即自动录制：按 UTC 整 10 分钟为一个周期，每周期保留
+**最后一个完整历元**的原始报文 + 该时刻每颗卫星位置快照，落盘到
+`recordings/<sid>/<role>__<挂载点>/`（断电 / 休眠 / 重启后仍可导出）。
+
+在「**录制导出 / 轨迹叠加**」面板里：
+- **选时段**：快捷「最近 1h / 6h / 12h / 24h / 全部」，或填绝对起止时间（本地时间）。
+- **预览轨迹叠加**：在页面内一张天空图上把时段内所有周期的卫星位置连成轨迹
+  （实线 / ● 末点 = 基站，虚线 / ✚ 末点 = 测站，颜色 = 星座）。
+- **导出 ZIP + 服务端**：两路通道**按挂载点名分文件夹**，各产出
+  `<区间>.rtcm`（合并后可回放）、`<区间>_track.csv`、`<区间>_skyplot.html`
+  （自包含轨迹叠加图，浏览器直接打开）。同时写到服务端 `exports/<sid>/<区间>/`
+  归档，并打包成 ZIP 由浏览器下载。
+
+导出 API：`GET /api/recordings`（含可导出范围）、`GET /api/track`、
+`POST /api/export`、`GET /api/export_zip`。`recordings/`、`exports/` 均已 gitignore。
 
 ## 说明与后续
 - 当前流若只含观测(MSM)，**天空图无法给真实方位/高度角**；接入星历报文

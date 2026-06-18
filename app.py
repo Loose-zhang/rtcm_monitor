@@ -21,10 +21,13 @@ import rtcm_decode as rd
 import bds_recon as br
 import gnss_orbit as orb
 import recorder as rec
+import exporter as exp
 
 STALE_SEC = 15.0          # drop a signal not refreshed for this long
 # 录制底座落盘根目录: 项目下 recordings/ (与 app.py 同级)
 RECORD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
+# 第三期导出根目录: 项目下 exports/
+EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
 app = Flask(__name__, static_folder="static")
 
 
@@ -563,8 +566,71 @@ def api_disconnect_eph():
 def api_recordings():
     """列出本会话已封存的录制周期 (验证 + 第三期导出概览)。"""
     sid = request.args.get("sid") or "default"
-    return {"ok": True, "dir": RECORD_DIR,
-            "channels": rec.list_recordings(RECORD_DIR, sid)}
+    out = {"ok": True, "dir": RECORD_DIR,
+           "channels": rec.list_recordings(RECORD_DIR, sid)}
+    out["range"] = exp.available_range(RECORD_DIR, sid)   # 可导出时间范围
+    return out
+
+
+def _export_window(cfg):
+    """从请求体解析导出时间窗 -> (start_ts, end_ts) epoch 秒。
+
+    支持: mode='last' + hours (最近 N 小时); mode='range' + start/end (epoch 秒);
+    缺省回退到该会话全部已录范围。"""
+    sid = cfg.get("sid") or "default"
+    now = time.time()
+    mode = cfg.get("mode", "last")
+    if mode == "range" and cfg.get("start") and cfg.get("end"):
+        return int(float(cfg["start"])), int(float(cfg["end"]))
+    if mode == "last" and cfg.get("hours"):
+        return int(now - float(cfg["hours"]) * 3600), int(now) + 1
+    rng = exp.available_range(RECORD_DIR, sid)
+    if rng:
+        return int(rng["start"]), int(rng["end"])
+    return int(now - 86400), int(now) + 1
+
+
+@app.route("/api/track")
+def api_track():
+    """返回区间内各通道卫星轨迹点 (页面内叠加天空图用)。"""
+    sid = request.args.get("sid") or "default"
+    cfg = {"sid": sid, "mode": request.args.get("mode", "last"),
+           "hours": request.args.get("hours"),
+           "start": request.args.get("start"), "end": request.args.get("end")}
+    s, e = _export_window(cfg)
+    return {"ok": True, "start": s, "end": e,
+            "channels": exp.read_track_points(RECORD_DIR, sid, s, e)}
+
+
+@app.route("/api/export", methods=["POST"])
+def api_export():
+    """执行导出: 写 exports/<sid>/<range>/ 并打包 zip, 返回概览 + 下载链接。"""
+    cfg = request.get_json(force=True) or {}
+    sid = cfg.get("sid") or "default"
+    try:
+        s, e = _export_window(cfg)
+        if e <= s:
+            return {"ok": False, "error": "结束时间需晚于开始时间"}, 400
+        r = exp.do_export(RECORD_DIR, EXPORT_DIR, sid, s, e)
+        if r.get("empty"):
+            return {"ok": False, "error": "所选时段内没有已封存的录制周期"}, 404
+        r["zip_url"] = (f"/api/export_zip?sid={sid}"
+                        f"&name={r['zip_name']}")
+        r.pop("zip_path", None)
+        return r
+    except Exception as ex:
+        return {"ok": False, "error": str(ex)}, 400
+
+
+@app.route("/api/export_zip")
+def api_export_zip():
+    """下载已生成的导出 zip。"""
+    sid = request.args.get("sid") or "default"
+    name = os.path.basename(request.args.get("name", ""))   # 防目录穿越
+    folder = os.path.join(EXPORT_DIR, rec._safe(sid))
+    if not name.endswith(".zip") or not os.path.isfile(os.path.join(folder, name)):
+        return {"ok": False, "error": "导出文件不存在"}, 404
+    return send_from_directory(folder, name, as_attachment=True)
 
 
 @app.route("/stream")

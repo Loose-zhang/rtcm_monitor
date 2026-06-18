@@ -364,11 +364,11 @@
       </section>
     </div>
 
-    <!-- ===== 折叠：CN0 信噪比 / 事件日志 / 频点图例（默认隐藏）===== -->
+    <!-- ===== 折叠：CN0 信噪比 / 频点图例 / 事件日志（默认隐藏）===== -->
     <section class="card">
       <div class="chead collapsed" onclick="toggleCard('detailBody',this)">
         <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="13" width="3" height="5"/></svg>
-          CN0 信噪比 / 系统日志 / 频点图例 <span class="tag">点击展开</span></h2>
+          CN0 信噪比 / 频点图例 / 系统日志 <span class="tag">点击展开</span></h2>
         <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
       </div>
       <div class="cbody hidden" id="detailBody">
@@ -380,13 +380,49 @@
           <div id="barInner" style="position:relative;height:260px;min-width:100%"><canvas id="barChart"></canvas></div>
         </div>
         <div class="note" id="barNote">星数较多时图表可横向滚动；上方标签按系统筛选。</div>
-        <!-- event log -->
-        <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">实时解析与事件日志 · 连接状态 · 报文类型 · 卫星增失 · 北斗重构异常</span></h2>
-        <div class="logpanel" id="logPanel" style="margin-top:8px"><div class="log-item">等待事件 · 连接数据源后此处实时滚动显示</div></div>
         <!-- frequency legend -->
         <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">频点 / 信号图例</span></h2>
         <div class="legend" id="legend" style="margin-top:8px"></div>
         <table class="freqtab" id="freqtab" style="margin-top:10px"></table>
+        <!-- event log -->
+        <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">实时解析与事件日志 · 连接状态 · 报文类型 · 卫星增失 · 北斗重构异常</span></h2>
+        <div class="logpanel" id="logPanel" style="margin-top:8px"><div class="log-item">等待事件 · 连接数据源后此处实时滚动显示</div></div>
+      </div>
+    </section>
+
+    <!-- ===== 录制导出 / 轨迹叠加 (第三期 / 项4) ===== -->
+    <section class="card">
+      <div class="chead collapsed" onclick="toggleCard('exportBody',this);if(!document.getElementById('exportBody').classList.contains('hidden'))loadExpRange()">
+        <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--purple)"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+          录制导出 / 轨迹叠加 <span class="tag">按时段导出 RTCM + 轨迹 · 双通道按挂载点分文件夹</span></h2>
+        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+      </div>
+      <div class="cbody hidden" id="exportBody">
+        <div class="note" id="expRange" style="margin-top:0">可导出范围：加载中…</div>
+        <div class="modetabs" style="margin-top:10px">
+          <button id="expTabLast" class="on" onclick="event.stopPropagation();setExpMode('last')">快捷时长</button>
+          <button id="expTabRange" onclick="event.stopPropagation();setExpMode('range')">绝对区间</button>
+        </div>
+        <div id="expLast" class="systabs">
+          <button data-h="1" onclick="setExpHours(1,this)">最近 1h</button>
+          <button data-h="6" onclick="setExpHours(6,this)">6h</button>
+          <button data-h="12" onclick="setExpHours(12,this)">12h</button>
+          <button data-h="24" class="on" onclick="setExpHours(24,this)">24h</button>
+          <button data-h="all" onclick="setExpHours('all',this)">全部</button>
+        </div>
+        <div id="expRangeBox" class="hidden" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:2px">
+          <div class="fld" style="display:flex;flex-direction:column;gap:3px"><label style="font-size:11px;color:var(--mut)">开始 (本地时间)</label><input id="expStart" type="datetime-local"></div>
+          <div class="fld" style="display:flex;flex-direction:column;gap:3px"><label style="font-size:11px;color:var(--mut)">结束 (本地时间)</label><input id="expEnd" type="datetime-local"></div>
+        </div>
+        <div class="btnrow" style="margin-top:12px">
+          <button class="ghost" onclick="previewTrack()">预览轨迹叠加</button>
+          <button onclick="doExport()">导出 ZIP + 服务端</button>
+        </div>
+        <div class="note" id="expStatus" style="min-height:16px"></div>
+        <div class="skywrap" id="expSkyWrap" style="height:46vh;margin-top:8px;cursor:default">
+          <svg id="expSky" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block"></svg>
+        </div>
+        <div class="legend" id="expLegend" style="margin-top:8px"></div>
       </div>
     </section>
   </div>
@@ -841,6 +877,108 @@ function setHoverRow(key){
   svg.addEventListener('mouseover',e=>{const t=e.target.closest('.skm'); if(t)setHoverRow(t.dataset.key);});
   svg.addEventListener('mouseout',e=>{const t=e.target.closest('.skm'); if(t)setHoverRow(null);});
 })();
+
+// ---------- 录制导出 / 轨迹叠加 (项4) ----------
+let expMode='last', expHours=24;
+function setExpMode(m){expMode=m;
+  document.getElementById('expTabLast').classList.toggle('on',m==='last');
+  document.getElementById('expTabRange').classList.toggle('on',m==='range');
+  document.getElementById('expLast').classList.toggle('hidden',m!=='last');
+  document.getElementById('expRangeBox').classList.toggle('hidden',m!=='range');
+}
+function setExpHours(h,btn){expHours=h;
+  document.querySelectorAll('#expLast button').forEach(b=>b.classList.toggle('on',b===btn));
+}
+function _toLocalInput(epoch){const d=new Date(epoch*1000),p=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;}
+async function loadExpRange(){
+  const el=document.getElementById('expRange');
+  try{
+    const j=await (await fetch('/api/recordings?sid='+encodeURIComponent(SID))).json();
+    if(j.range){
+      const fmt=e=>new Date(e*1000).toLocaleString('zh-CN',{hour12:false});
+      el.textContent=`可导出范围：${fmt(j.range.start)} → ${fmt(j.range.end)} · 共 ${j.range.periods} 周期`;
+      const si=document.getElementById('expStart'), ei=document.getElementById('expEnd');
+      if(si&&!si.value)si.value=_toLocalInput(j.range.start);
+      if(ei&&!ei.value)ei.value=_toLocalInput(j.range.end);
+    }else el.textContent='可导出范围：暂无已封存的录制（连接数据源并录满一个 10 分钟周期后即可导出）。';
+  }catch(e){el.textContent='可导出范围：读取失败 '+e;}
+}
+function expParams(){
+  if(expMode==='range'){
+    const sv=document.getElementById('expStart').value, ev=document.getElementById('expEnd').value;
+    return {mode:'range',
+      start:sv?Math.floor(new Date(sv).getTime()/1000):null,
+      end:ev?Math.floor(new Date(ev).getTime()/1000):null};
+  }
+  if(expHours==='all')return {mode:'all'};
+  return {mode:'last',hours:expHours};
+}
+async function previewTrack(){
+  const st=document.getElementById('expStatus'); st.textContent='正在读取轨迹…';
+  const p=expParams(), q=new URLSearchParams({sid:SID});
+  Object.entries(p).forEach(([k,v])=>{if(v!=null)q.set(k,v);});
+  try{
+    const j=await (await fetch('/api/track?'+q.toString())).json();
+    if(!j.ok){st.textContent='读取失败: '+(j.error||'');return;}
+    drawExpSky(j.channels||{});
+    const n=Object.values(j.channels||{}).reduce((a,c)=>a+c.npoints,0);
+    st.textContent=n?`已叠加 ${n} 个轨迹点（${Object.keys(j.channels).length} 个通道）。`:'该时段无轨迹点。';
+  }catch(e){st.textContent='读取失败: '+e;}
+}
+async function doExport(){
+  const st=document.getElementById('expStatus'); st.textContent='正在导出…';
+  try{
+    const j=await (await fetch('/api/export',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(Object.assign({sid:SID},expParams()))})).json();
+    if(!j.ok){st.textContent='导出失败: '+(j.error||'');return;}
+    const a=document.createElement('a'); a.href=j.zip_url; a.download=j.zip_name||'export.zip';
+    document.body.appendChild(a); a.click(); a.remove();
+    const chs=(j.channels||[]).map(c=>`${c.folder}(${c.role}) ${c.periods}周期/${c.track_points}点`).join(' · ');
+    st.innerHTML=`✓ 已导出 ${j.total_periods} 周期 · ZIP 已开始下载<br>服务端目录：<code>${escHtml(j.server_dir)}</code><br>${escHtml(chs)}`;
+    previewTrack();
+  }catch(e){st.textContent='导出失败: '+e;}
+}
+function drawExpSky(channels){
+  const svg=document.getElementById('expSky'); if(!svg)return;
+  const cx=180,cy=180,R=170;
+  let g='<circle cx="180" cy="180" r="170" fill="#0f1419" stroke="#2c3a48"/>'+
+        '<circle cx="180" cy="180" r="113.3" fill="none" stroke="#2c3a48"/>'+
+        '<circle cx="180" cy="180" r="56.7" fill="none" stroke="#2c3a48"/>'+
+        '<circle cx="180" cy="180" r="151.1" fill="none" stroke="#f0a020" stroke-width="1.3" stroke-dasharray="6 4"/>'+
+        '<circle cx="180" cy="180" r="28.3" fill="none" stroke="#f0a020" stroke-width="1.3" stroke-dasharray="6 4"/>'+
+        '<line x1="180" y1="10" x2="180" y2="350" stroke="#2c3a48"/>'+
+        '<line x1="10" y1="180" x2="350" y2="180" stroke="#2c3a48"/>'+
+        '<text x="180" y="22" fill="#8b9bb0" font-size="10" text-anchor="middle">N</text>'+
+        '<text x="344" y="184" fill="#8b9bb0" font-size="10" text-anchor="middle">E</text>'+
+        '<text x="180" y="346" fill="#8b9bb0" font-size="10" text-anchor="middle">S</text>'+
+        '<text x="16" y="184" fill="#8b9bb0" font-size="10" text-anchor="middle">W</text>';
+  const proj=(az,el)=>{const r=R*(90-el)/90,a=az*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)];};
+  Object.values(channels).forEach(ch=>{
+    const rover=ch.role==='rover', bysat={};
+    (ch.points||[]).forEach(p=>{const [t,sat,sysc,az,el]=p; if(el==null||el<0)return;
+      (bysat[sat]=bysat[sat]||{sys:sysc,pts:[]}).pts.push([t,az,el]);});
+    Object.entries(bysat).forEach(([sat,info])=>{
+      const color=SYS_COLOR[info.sys]||'#8b9bb0';
+      info.pts.sort((a,b)=>a[0]-b[0]);
+      const xy=info.pts.map(([t,az,el])=>proj(az,el));
+      if(xy.length>1){
+        const d=xy.map((q,i)=>(i?'L':'M')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ');
+        g+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="1.4" opacity="0.8"${rover?' stroke-dasharray="4 3"':''}><title>${sat}</title></path>`;
+      }
+      xy.forEach(q=>g+=`<circle cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="1.3" fill="${color}" opacity="0.5"/>`);
+      const last=xy[xy.length-1];
+      if(rover)g+=`<path d="M${(last[0]-3.5).toFixed(1)} ${last[1].toFixed(1)}H${(last[0]+3.5).toFixed(1)} M${last[0].toFixed(1)} ${(last[1]-3.5).toFixed(1)}V${(last[1]+3.5).toFixed(1)}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+      else g+=`<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="3" fill="${color}" stroke="#0f1419" stroke-width="1"/>`;
+      g+=`<text x="${last[0].toFixed(1)}" y="${(last[1]-5).toFixed(1)}" fill="#c5d1e0" font-size="8" text-anchor="middle">${sat}</text>`;
+    });
+  });
+  svg.innerHTML=g;
+  document.getElementById('expLegend').innerHTML=
+    '<span class="it"><span class="sw" style="background:#8b9bb0;border-radius:50%"></span>实线 / ● 末点 = 基站</span>'+
+    '<span class="it"><span class="sw" style="background:#8b9bb0"></span>虚线 / ✚ 末点 = 测站</span>'+
+    '<span class="it">颜色 = 星座 · 折线 = 时段内轨迹</span>';
+}
 
 // ---------- SSE ----------
 initCharts();
