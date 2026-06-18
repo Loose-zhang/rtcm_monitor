@@ -197,6 +197,65 @@
   /* ---------- matrix empty state ---------- */
   .mat-empty{padding:48px 0;text-align:center;color:var(--mut);opacity:.55;font-size:13px;
     letter-spacing:.5px}
+
+  /* ================= 专业仪表盘布局：ribbon + 35/65 双画幅 + 控制台 + 抽屉 ================= */
+  body{display:flex;flex-direction:column;min-height:100vh}
+  header{padding:6px 14px;gap:10px}
+  header .kpis{gap:8px}
+  header .kpi{padding:4px 10px;min-width:0;gap:7px}
+  header .kpi .kic{width:22px;height:22px}
+  header .kpi .kv b{font-size:16px}
+  header .kpi .kv span{font-size:9.5px}
+  main.twin{flex:1;min-height:0;display:grid;grid-template-columns:35fr 65fr;
+            gap:10px;padding:10px;align-items:stretch}
+  .leftcol{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:10px;
+         display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+  .leftcol .skypanel{flex:1.1} .leftcol .matpanel{flex:1;min-height:0}
+  .phead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+         padding:7px 11px;border-bottom:1px solid var(--line);flex:none}
+  .ptitle{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;
+          min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pctrl{display:flex;align-items:center;gap:6px;flex:none}
+  .panel .skywrap{flex:1;min-height:0;margin:0;border-radius:0}
+  .panel>.note{margin:0;padding:6px 10px;border-top:1px solid var(--line)}
+  .matpanel .matwrap{flex:1;min-height:0;max-height:none;margin:0;border:none;border-radius:0}
+  .rightcol{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden;
+            background:var(--card);border:1px solid var(--line);border-radius:10px}
+  .rightcol .skywrap{flex:1;min-height:0;margin:0;border-radius:0}
+  .rightcol .legend{padding:6px 11px;border-top:1px solid var(--line);margin:0}
+  .timeline{padding:7px 11px;border-top:1px solid var(--line);display:flex;
+            flex-direction:column;gap:5px;flex:none}
+  .timeline input[type=range]{width:100%;accent-color:var(--acc);cursor:pointer}
+  .tlinfo{display:flex;justify-content:space-between;align-items:center;
+          font-size:11px;color:var(--mut);gap:8px}
+  .skybtn.on{background:var(--acc);color:#06121f;border-color:var(--acc)}
+  .skybtn .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
+  /* 底部控制台 */
+  .controlbar{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap;
+              padding:8px 12px;background:var(--card);border-top:1px solid var(--line);flex:none}
+  .controlbar .cb-left,.controlbar .cb-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .controlbar .cb-right{margin-left:auto}
+  .cblabel{font-size:11px;color:var(--mut)}
+  .controlbar input[type=datetime-local]{background:var(--card2);border:1px solid var(--line);
+        color:var(--txt);border-radius:6px;padding:5px 7px;font-size:12px}
+  /* 抽屉：从底部弹起，浮在控制台之上 */
+  .drawer{position:fixed;left:0;right:0;bottom:0;z-index:80;background:var(--card);
+          border-top:2px solid var(--acc);box-shadow:0 -10px 30px rgba(0,0,0,.5);
+          max-height:74vh;overflow:auto;display:none;padding:12px 16px}
+  .drawer.open{display:block}
+  .drawerhd{display:flex;justify-content:space-between;align-items:center;
+            font-weight:600;font-size:13px;margin-bottom:10px}
+  .drawergrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));
+              gap:12px;align-items:start}
+  .dcard{border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--card2)}
+  .dcard>h3{font-size:12.5px;margin:0 0 9px;font-weight:600;display:flex;align-items:center;gap:7px}
+  #expSkyWrap:fullscreen{width:100vw;height:100vh;background:#0f1419}
+  @media(max-width:1100px){
+    main.twin{grid-template-columns:1fr;height:auto}
+    .leftcol .skypanel,.leftcol .matpanel{min-height:46vh}
+    .rightcol{min-height:70vh}
+  }
 </style>
 </head>
 <body>
@@ -240,199 +299,174 @@
   </div>
 </header>
 
-<main>
-  <!-- ============ LEFT: configuration + checks ============ -->
-  <div class="col">
-
-    <!-- data source -->
-    <section class="card">
-      <div class="chead collapsed" onclick="toggleCard('srcBody',this)">
-        <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> 基站 NTRIP 数据源</h2>
-        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+<main class="twin">
+  <!-- ===== 左 35%：空间与信号源（天空图 + 信号矩阵）===== -->
+  <div class="leftcol">
+    <div class="panel skypanel">
+      <div class="phead">
+        <span class="ptitle"><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><circle cx="12" cy="12" r="9"/><path d="m16.2 7.8-2.9 5.4-5.5 3 2.9-5.4z"/></svg>天空图 <span class="tag">实时 CN0 雷达 · 滚轮缩放/拖拽</span></span>
+        <span class="pctrl">
+          <select class="sel" id="skyRoleSel" onchange="setSkyRole(this.value)" style="font-size:11px;padding:3px 6px"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select>
+          <button class="skybtn" onclick="skyReset()">复位</button>
+        </span>
       </div>
-      <div id="srcBody" class="cbody hidden">
-        <div class="modetabs">
-          <button id="tabNtrip" class="on" onclick="event.stopPropagation();setMode('ntrip')">NTRIP 接入</button>
-          <button id="tabFile" onclick="event.stopPropagation();setMode('file')">文件回放</button>
-        </div>
-        <div id="conn">
-          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="host" placeholder="rtk.example.com"></div>
-          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="port" value="2101"></div>
-          <div class="fld ntrip"><label>挂载点</label><input id="mount" placeholder="RTCM33"></div>
-          <div class="fld ntrip"><label>用户名</label><input id="user"></div>
-          <div class="fld ntrip"><label>密码</label><input id="pass" type="password"></div>
-          <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="gga" placeholder="$GPGGA,... 留空=非VRS"></div>
-          <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="path" placeholder="/path/to/Bds.rtcm"></div>
-          <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="speed" value="1"></div>
-          <div class="btnrow">
-            <button id="btnConn" onclick="connect()">连接</button>
-            <button id="btnDisc" class="ghost" onclick="disconnect()" disabled>断开</button>
-          </div>
-        </div>
-        <div class="note">基站(base)通道 · 凭据只发送到本机后端再转发给 caster，不写入磁盘。天空图以圆点 ● 表示。</div>
+      <div class="skywrap" id="skyWrap"><svg id="sky" viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet"></svg></div>
+      <div class="note" id="skyNote">接入广播星历流后显示真实方位/高度角；未接入时按系统环形近似展示。</div>
+    </div>
+    <div class="panel matpanel">
+      <div class="phead">
+        <span class="ptitle"><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>卫星×信号矩阵 <span class="srcleg"><b class="s1">左●基站</b>/<b class="s2">右✚测站</b></span></span>
+        <span class="pctrl"><select class="sel" id="matRoleSel" onchange="setMatRole(this.value)" style="font-size:11px;padding:3px 6px"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></span>
       </div>
-      <div class="summary" id="srcSummary"><span id="srcDot" class="live-dot"><i></i></span><span id="srcSummaryTxt">未连接</span><span id="recBadge" class="recbadge hidden" title="录制底座：每10分钟保留一个完整历元+卫星位置"></span></div>
-    </section>
-
-    <!-- rover data source -->
-    <section class="card">
-      <div class="chead collapsed" onclick="toggleCard('srcBodyR',this)">
-        <h2><svg class="ic" viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><path d="M5 5l3 3M16 16l3 3M19 5l-3 3M8 16l-3 3"/><circle cx="12" cy="12" r="3"/></svg> 测站 NTRIP 数据源</h2>
-        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-      <div id="srcBodyR" class="cbody hidden">
-        <div class="modetabs">
-          <button id="tabNtripR" class="on" onclick="event.stopPropagation();setModeR('ntrip')">NTRIP 接入</button>
-          <button id="tabFileR" onclick="event.stopPropagation();setModeR('file')">文件回放</button>
-        </div>
-        <div id="connR">
-          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="rhost" placeholder="rtk.example.com"></div>
-          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="rport" value="2101"></div>
-          <div class="fld ntrip"><label>挂载点</label><input id="rmount" placeholder="RTCM33"></div>
-          <div class="fld ntrip"><label>用户名</label><input id="ruser"></div>
-          <div class="fld ntrip"><label>密码</label><input id="rpass" type="password"></div>
-          <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="rgga" placeholder="$GPGGA,... 留空=非VRS"></div>
-          <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="rpath" placeholder="/path/to/rover.rtcm"></div>
-          <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="rspeed" value="1"></div>
-          <div class="btnrow">
-            <button id="rbtnConn" onclick="connectR()">连接</button>
-            <button id="rbtnDisc" class="ghost" onclick="disconnectR()" disabled>断开</button>
-          </div>
-        </div>
-        <div class="note">测站(rover)通道 · 方位/高度角共用基站坐标。天空图以十字 ✚ 表示。</div>
-      </div>
-      <div class="summary" id="srcSummaryR"><span id="srcDotR" class="live-dot"><i></i></span><span id="srcSummaryTxtR">未连接</span><span id="recBadgeR" class="recbadge hidden" title="录制底座：每10分钟保留一个完整历元+卫星位置"></span></div>
-    </section>
-
-    <!-- ephemeris -->
-    <section class="card">
-      <div class="chead collapsed" onclick="toggleCard('ephBody',this)">
-        <h2><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><ellipse cx="12" cy="12" rx="10" ry="4.5"/><ellipse cx="12" cy="12" rx="10" ry="4.5" transform="rotate(60 12 12)"/></svg> 广播星历流 (BCEP)</h2>
-        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-      <div id="ephBody" class="cbody hidden">
-        <div class="note" style="margin-top:0;margin-bottom:8px">独立 NTRIP 流 · 用于算卫星位置 / 真实天空图</div>
-        <div id="conn2">
-          <div class="fld" style="flex-basis:100%"><label>Caster 地址</label><input id="ehost" value="ntrip.data.gnss.ga.gov.au"></div>
-          <div class="fld" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="eport" value="2101"></div>
-          <div class="fld"><label>挂载点</label><input id="emount" value="BCEP00BKG0"></div>
-          <div class="fld"><label>用户名</label><input id="euser" value="Ming" placeholder="可选"></div>
-          <div class="fld"><label>密码</label><input id="epass" type="password" value="@Zhang12345" placeholder="可选"></div>
-          <div class="btnrow">
-            <button onclick="connectEph()">连接星历</button>
-            <button class="ghost" onclick="disconnectEph()">断开</button>
-          </div>
-        </div>
-      </div>
-      <div class="summary" id="ephStat">未连接</div>
-    </section>
-
-    <!-- BDS reconstruction check -->
-    <section class="card" id="anomCard">
-      <div class="bd">
-        <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--warn)"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>
-          北斗重构校验 <span class="tag">2026/04 PRN 重构表</span></h2>
-        <div id="anoms" style="margin-top:10px"><div class="note">等待数据…</div></div>
-      </div>
-    </section>
+      <div class="matwrap" id="matWrap"><table id="matrix"></table></div>
+    </div>
   </div>
 
-  <!-- ============ RIGHT: matrix + skyplot + charts ============ -->
-  <div class="col">
-
-    <!-- ===== 巨幕：天空图(左) + 频点矩阵(右) ===== -->
-    <div class="skyrow">
-      <!-- skyplot -->
-      <section class="card">
-        <div class="bd">
-          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><circle cx="12" cy="12" r="9"/><path d="m16.2 7.8-2.9 5.4-5.5 3 2.9-5.4z"/></svg>
-            天空图 (CN0 雷达) <span class="tag">滚轮缩放 · 拖拽平移</span>
-            <button class="skybtn" style="float:right;margin-left:6px" onclick="skyReset()">复位</button>
-            <select class="sel chsel" id="skyRoleSel" onchange="setSkyRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
-          <div class="skywrap" id="skyWrap"><svg id="sky" viewBox="0 0 320 320" preserveAspectRatio="xMidYMid meet"></svg></div>
-          <div class="note" id="skyNote">接入广播星历流后显示真实方位/高度角；未接入时按系统环形近似展示。</div>
-        </div>
-      </section>
-      <!-- matrix -->
-      <section class="card">
-        <div class="bd">
-          <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--acc)"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
-            卫星 × 信号矩阵 <span class="srcleg">每格 <b class="s1">左●基站</b> / <b class="s2">右✚测站</b> · 悬浮联动天空图</span>
-            <select class="sel chsel" id="matRoleSel" onchange="setMatRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
-          <div class="matwrap"><table id="matrix"></table></div>
-        </div>
-      </section>
+  <!-- ===== 右 65%：地面轨迹主战场（卫星轨迹叠加 + 时间轴）===== -->
+  <div class="rightcol">
+    <div class="phead">
+      <span class="ptitle"><svg class="ic" viewBox="0 0 24 24" style="color:var(--purple)"><circle cx="12" cy="12" r="9"/><path d="m7 14 4-5 3 3 3-4"/></svg>卫星轨迹叠加 <span class="tag">az/el 随时间 · 滚轮缩放/拖拽</span></span>
+      <span class="pctrl">
+        <span id="recMini" class="recbadge hidden"></span>
+        <span id="expFilter" class="systabs"></span>
+        <button class="skybtn" onclick="expFullscreen()">全屏</button>
+        <button class="skybtn" onclick="expSkyReset()">复位</button>
+      </span>
     </div>
-
-    <!-- ===== 折叠：CN0 信噪比 / 频点图例 / 事件日志（默认隐藏）===== -->
-    <section class="card">
-      <div class="chead collapsed" onclick="toggleCard('detailBody',this)">
-        <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--ok)"><path d="M3 3v18h18"/><rect x="7" y="11" width="3" height="7"/><rect x="12" y="7" width="3" height="11"/><rect x="17" y="13" width="3" height="5"/></svg>
-          CN0 信噪比 / 频点图例 / 系统日志 <span class="tag">点击展开</span></h2>
-        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-      <div class="cbody hidden" id="detailBody">
-        <!-- CN0 bars -->
-        <h2 style="font-size:13px;margin:4px 0 0"><span class="tag">CN0 信噪比 · 每颗星按信号分组着色 (dB-Hz)</span>
-          <select class="sel chsel" id="barRoleSel" onchange="setBarRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
-        <div class="systabs" id="barTabs" style="margin-top:10px"></div>
-        <div class="barscroll" style="overflow-x:auto;overflow-y:hidden;margin-top:8px">
-          <div id="barInner" style="position:relative;height:260px;min-width:100%"><canvas id="barChart"></canvas></div>
-        </div>
-        <div class="note" id="barNote">星数较多时图表可横向滚动；上方标签按系统筛选。</div>
-        <!-- frequency legend -->
-        <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">频点 / 信号图例</span></h2>
-        <div class="legend" id="legend" style="margin-top:8px"></div>
-        <table class="freqtab" id="freqtab" style="margin-top:10px"></table>
-        <!-- event log -->
-        <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">实时解析与事件日志 · 连接状态 · 报文类型 · 卫星增失 · 北斗重构异常</span></h2>
-        <div class="logpanel" id="logPanel" style="margin-top:8px"><div class="log-item">等待事件 · 连接数据源后此处实时滚动显示</div></div>
-      </div>
-    </section>
-
-    <!-- ===== 录制导出 / 轨迹叠加 (第三期 / 项4) ===== -->
-    <section class="card">
-      <div class="chead collapsed" onclick="toggleCard('exportBody',this);if(!document.getElementById('exportBody').classList.contains('hidden'))loadExpRange()">
-        <h2><svg class="ic" viewBox="0 0 24 24" style="color:var(--purple)"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
-          录制导出 / 轨迹叠加 <span class="tag">按时段导出 RTCM + 轨迹 · 双通道按挂载点分文件夹</span></h2>
-        <svg class="ic chev" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
-      </div>
-      <div class="cbody hidden" id="exportBody">
-        <div class="note" id="expRange" style="margin-top:0">可导出范围：加载中…</div>
-        <div class="modetabs" style="margin-top:10px">
-          <button id="expTabLast" class="on" onclick="event.stopPropagation();setExpMode('last')">快捷时长</button>
-          <button id="expTabRange" onclick="event.stopPropagation();setExpMode('range')">绝对区间</button>
-        </div>
-        <div id="expLast" class="systabs">
-          <button data-h="1" onclick="setExpHours(1,this)">最近 1h</button>
-          <button data-h="6" onclick="setExpHours(6,this)">6h</button>
-          <button data-h="12" onclick="setExpHours(12,this)">12h</button>
-          <button data-h="24" class="on" onclick="setExpHours(24,this)">24h</button>
-          <button data-h="all" onclick="setExpHours('all',this)">全部</button>
-        </div>
-        <div id="expRangeBox" class="hidden" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:2px">
-          <div class="fld" style="display:flex;flex-direction:column;gap:3px"><label style="font-size:11px;color:var(--mut)">开始 (本地时间)</label><input id="expStart" type="datetime-local"></div>
-          <div class="fld" style="display:flex;flex-direction:column;gap:3px"><label style="font-size:11px;color:var(--mut)">结束 (本地时间)</label><input id="expEnd" type="datetime-local"></div>
-        </div>
-        <div class="btnrow" style="margin-top:12px">
-          <button class="ghost" onclick="previewTrack()">预览轨迹叠加</button>
-          <button onclick="doExport()">导出 ZIP + 服务端</button>
-        </div>
-        <div class="btnrow" style="margin-top:8px">
-          <button class="ghost" onclick="document.getElementById('expImport').click()" title="导入离线保存的 _track.csv 或导出的 zip，直接在下方叠加显示">导入轨迹</button>
-        </div>
-        <input id="expImport" type="file" accept=".csv,.zip" style="display:none" onchange="importTrack(this)">
-        <div class="note" id="expStatus" style="min-height:16px"></div>
-        <div class="skywrap" id="expSkyWrap" style="height:46vh;margin-top:8px;touch-action:none">
-          <button class="skybtn" onclick="expSkyReset()" style="position:absolute;top:6px;right:6px;z-index:2">复位</button>
-          <span class="note" style="position:absolute;top:9px;left:10px;z-index:2;margin:0;pointer-events:none">滚轮缩放 · 拖拽平移</span>
-          <svg id="expSky" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block"></svg>
-        </div>
-        <div class="legend" id="expLegend" style="margin-top:8px"></div>
-      </div>
-    </section>
+    <div class="skywrap" id="expSkyWrap" style="touch-action:none">
+      <svg id="expSky" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="note" id="expStatus" style="padding:5px 11px;margin:0;border-top:1px solid var(--line)">拖动下方时间轴回溯历史，或用底部控制台「生成预览 / 导入轨迹」。</div>
+    <div class="timeline">
+      <input type="range" id="tlSlider" min="0" max="0" value="0" step="1" oninput="onTimeline(this.value)">
+      <div class="tlinfo"><span id="tlLabel">时间轴：加载录制中…</span><button class="skybtn" onclick="tlReload()">刷新时间轴</button></div>
+    </div>
+    <div class="legend" id="expLegend"></div>
   </div>
 </main>
+
+<!-- ===== 底部：动作控制台（单行矮设计）===== -->
+<div class="controlbar">
+  <div class="cb-left">
+    <span class="cblabel">时段</span>
+    <button id="expTabLast" class="skybtn on" onclick="setExpMode('last')">快捷</button>
+    <button id="expTabRange" class="skybtn" onclick="setExpMode('range')">绝对</button>
+    <span id="expLast" class="systabs">
+      <button data-h="1" onclick="setExpHours(1,this)">1h</button>
+      <button data-h="6" onclick="setExpHours(6,this)">6h</button>
+      <button data-h="12" onclick="setExpHours(12,this)">12h</button>
+      <button data-h="24" class="on" onclick="setExpHours(24,this)">24h</button>
+      <button data-h="all" onclick="setExpHours('all',this)">全部</button>
+    </span>
+    <span id="expRangeBox" style="display:none;align-items:center;gap:6px">
+      <input id="expStart" type="datetime-local">
+      <span class="cblabel">~</span>
+      <input id="expEnd" type="datetime-local">
+    </span>
+    <button class="ghost" onclick="previewTrack()">生成预览</button>
+    <button onclick="doExport()">导出 ZIP</button>
+    <button class="ghost" onclick="document.getElementById('expImport').click()">导入轨迹</button>
+    <input id="expImport" type="file" accept=".csv,.zip" style="display:none" onchange="importTrack(this)">
+    <span class="note" id="expRange" style="margin:0">可导出范围：加载中…</span>
+  </div>
+  <div class="cb-right">
+    <button class="skybtn" onclick="toggleDrawer('drawerConfig')">⚙ NTRIP 配置</button>
+    <button class="skybtn" onclick="toggleDrawer('drawerRecon')">北斗校验</button>
+    <button class="skybtn" onclick="toggleDrawer('drawerDetail')">信号详情/日志</button>
+  </div>
+</div>
+
+<!-- ===== 配置抽屉：基站 / 测站 / 星历 ===== -->
+<div class="drawer" id="drawerConfig">
+  <div class="drawerhd"><span>⚙ NTRIP 数据源配置</span><button class="skybtn" onclick="toggleDrawer('drawerConfig')">收起 ▾</button></div>
+  <div class="drawergrid">
+    <div class="dcard">
+      <h3><span id="srcDot" class="live-dot"><i></i></span> 基站 NTRIP 数据源</h3>
+      <div class="modetabs">
+        <button id="tabNtrip" class="on" onclick="setMode('ntrip')">NTRIP 接入</button>
+        <button id="tabFile" onclick="setMode('file')">文件回放</button>
+      </div>
+      <div id="conn">
+        <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="host" placeholder="rtk.example.com"></div>
+        <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="port" value="2101"></div>
+        <div class="fld ntrip"><label>挂载点</label><input id="mount" placeholder="RTCM33"></div>
+        <div class="fld ntrip"><label>用户名</label><input id="user"></div>
+        <div class="fld ntrip"><label>密码</label><input id="pass" type="password"></div>
+        <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="gga" placeholder="$GPGGA,... 留空=非VRS"></div>
+        <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="path" placeholder="/path/to/Bds.rtcm"></div>
+        <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="speed" value="1"></div>
+        <div class="btnrow">
+          <button id="btnConn" onclick="connect()">连接</button>
+          <button id="btnDisc" class="ghost" onclick="disconnect()" disabled>断开</button>
+        </div>
+      </div>
+      <div class="note"><span id="srcSummaryTxt">未连接</span><span id="recBadge" class="recbadge hidden" title="录制底座：每10分钟保留一个完整历元+卫星位置"></span></div>
+    </div>
+    <div class="dcard">
+      <h3><span id="srcDotR" class="live-dot"><i></i></span> 测站 NTRIP 数据源</h3>
+      <div class="modetabs">
+        <button id="tabNtripR" class="on" onclick="setModeR('ntrip')">NTRIP 接入</button>
+        <button id="tabFileR" onclick="setModeR('file')">文件回放</button>
+      </div>
+      <div id="connR">
+        <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="rhost" placeholder="rtk.example.com"></div>
+        <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="rport" value="2101"></div>
+        <div class="fld ntrip"><label>挂载点</label><input id="rmount" placeholder="RTCM33"></div>
+        <div class="fld ntrip"><label>用户名</label><input id="ruser"></div>
+        <div class="fld ntrip"><label>密码</label><input id="rpass" type="password"></div>
+        <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="rgga" placeholder="$GPGGA,... 留空=非VRS"></div>
+        <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="rpath" placeholder="/path/to/rover.rtcm"></div>
+        <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="rspeed" value="1"></div>
+        <div class="btnrow">
+          <button id="rbtnConn" onclick="connectR()">连接</button>
+          <button id="rbtnDisc" class="ghost" onclick="disconnectR()" disabled>断开</button>
+        </div>
+      </div>
+      <div class="note"><span id="srcSummaryTxtR">未连接</span><span id="recBadgeR" class="recbadge hidden" title="录制底座：每10分钟保留一个完整历元+卫星位置"></span></div>
+    </div>
+    <div class="dcard">
+      <h3>广播星历流 (BCEP)</h3>
+      <div class="note" style="margin-top:0;margin-bottom:8px">独立 NTRIP 流 · 用于算卫星位置 / 真实天空图</div>
+      <div id="conn2">
+        <div class="fld" style="flex-basis:100%"><label>Caster 地址</label><input id="ehost" value="ntrip.data.gnss.ga.gov.au"></div>
+        <div class="fld" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="eport" value="2101"></div>
+        <div class="fld"><label>挂载点</label><input id="emount" value="BCEP00BKG0"></div>
+        <div class="fld"><label>用户名</label><input id="euser" value="Ming" placeholder="可选"></div>
+        <div class="fld"><label>密码</label><input id="epass" type="password" value="@Zhang12345" placeholder="可选"></div>
+        <div class="btnrow">
+          <button onclick="connectEph()">连接星历</button>
+          <button class="ghost" onclick="disconnectEph()">断开</button>
+        </div>
+      </div>
+      <div class="note" id="ephStat">未连接</div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 北斗重构校验抽屉 ===== -->
+<div class="drawer" id="drawerRecon">
+  <div class="drawerhd"><span>🛡 北斗重构校验 · 2026/04 PRN 重构表</span><button class="skybtn" onclick="toggleDrawer('drawerRecon')">收起 ▾</button></div>
+  <div id="anoms"><div class="note">等待数据…</div></div>
+</div>
+
+<!-- ===== 信号详情 / 日志抽屉（CN0 柱状 / 频点图例 / 系统日志）===== -->
+<div class="drawer" id="drawerDetail">
+  <div class="drawerhd"><span>📊 CN0 信噪比 / 频点图例 / 系统日志</span><button class="skybtn" onclick="toggleDrawer('drawerDetail')">收起 ▾</button></div>
+  <div id="detailBody" class="hidden">
+    <h2 style="font-size:13px;margin:4px 0 0"><span class="tag">CN0 信噪比 · 每颗星按信号分组着色 (dB-Hz)</span>
+      <select class="sel chsel" id="barRoleSel" onchange="setBarRole(this.value)"><option value="both">基站+测站</option><option value="base">仅基站</option><option value="rover">仅测站</option></select></h2>
+    <div class="systabs" id="barTabs" style="margin-top:10px"></div>
+    <div class="barscroll" style="overflow-x:auto;overflow-y:hidden;margin-top:8px">
+      <div id="barInner" style="position:relative;height:260px;min-width:100%"><canvas id="barChart"></canvas></div>
+    </div>
+    <div class="note" id="barNote">星数较多时图表可横向滚动；上方标签按系统筛选。</div>
+    <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">频点 / 信号图例</span></h2>
+    <div class="legend" id="legend" style="margin-top:8px"></div>
+    <table class="freqtab" id="freqtab" style="margin-top:10px"></table>
+    <h2 style="font-size:13px;margin:16px 0 0"><span class="tag">实时解析与事件日志 · 连接状态 · 报文类型 · 卫星增失 · 北斗重构异常</span></h2>
+    <div class="logpanel" id="logPanel" style="margin-top:8px"><div class="log-item">等待事件 · 连接数据源后此处实时滚动显示</div></div>
+  </div>
+</div>
 
 <script>
 // ---------- per-device session id (isolates state across devices/browsers) ----------
@@ -615,6 +649,12 @@ function render(d){
     b.classList.toggle('err', !!r.error);};
   recBadge('recBadge', _ch.base);
   recBadge('recBadgeR', _ch.rover);
+  // 轨迹面板表头的精简录制指示（不必展开抽屉即可见）
+  const rm=document.getElementById('recMini');
+  if(rm){const rb=_ch.base&&_ch.base.rec, rr=_ch.rover&&_ch.rover.rec;
+    const any=(rb&&rb.recording)||(rr&&rr.recording);
+    rm.classList.toggle('hidden',!any);
+    if(any)rm.textContent='● 录制中 · '+(((rb&&rb.periods)||0)+((rr&&rr.periods)||0))+' 周期';}
 
   // KPIs (dim numbers when no live data)
   sStation.textContent=d.stats.station??'–';
@@ -890,8 +930,8 @@ let eSc=1, eTx=0, eTy=0;   // 叠加图缩放/平移状态
 function setExpMode(m){expMode=m;
   document.getElementById('expTabLast').classList.toggle('on',m==='last');
   document.getElementById('expTabRange').classList.toggle('on',m==='range');
-  document.getElementById('expLast').classList.toggle('hidden',m!=='last');
-  document.getElementById('expRangeBox').classList.toggle('hidden',m!=='range');
+  document.getElementById('expLast').style.display=(m==='last')?'':'none';
+  document.getElementById('expRangeBox').style.display=(m==='range')?'inline-flex':'none';
 }
 function setExpHours(h,btn){expHours=h;
   document.querySelectorAll('#expLast button').forEach(b=>b.classList.toggle('on',b===btn));
@@ -959,8 +999,30 @@ async function importTrack(inp){
   }catch(e){st.textContent='导入失败: '+e;}
   inp.value='';   // 允许再次选同一文件
 }
+const expSysOff=new Set();   // 被关闭的星座
+function buildExpFilter(channels){
+  const host=document.getElementById('expFilter'); if(!host)return;
+  const sys=new Set();
+  Object.values(channels||{}).forEach(c=>(c.points||[]).forEach(p=>sys.add(p[2])));
+  const order=['C','G','E','R','J','S','I'];
+  const keys=[...sys].sort((a,b)=>order.indexOf(a)-order.indexOf(b));
+  const sig=keys.join(',');
+  if(host.dataset.sig===sig)return; host.dataset.sig=sig;
+  host.innerHTML=keys.map(k=>`<button class="skybtn${expSysOff.has(k)?'':' on'}" data-sys="${k}" onclick="toggleExpSys('${k}')"><span class="dot" style="background:${SYS_COLOR[k]||'#8b9bb0'}"></span>${SYS_NAME[k]||k}</button>`).join('');
+}
+function toggleExpSys(k){
+  if(expSysOff.has(k))expSysOff.delete(k); else expSysOff.add(k);
+  document.querySelectorAll('#expFilter button[data-sys="'+k+'"]').forEach(b=>b.classList.toggle('on',!expSysOff.has(k)));
+  if(window.__expChannels)drawExpSky(window.__expChannels);
+}
+function expFullscreen(){const el=document.getElementById('expSkyWrap');
+  if(!document.fullscreenElement){el.requestFullscreen&&el.requestFullscreen();}
+  else{document.exitFullscreen&&document.exitFullscreen();}}
 function drawExpSky(channels){
   const svg=document.getElementById('expSky'); if(!svg)return;
+  channels=channels||window.__expChannels||{};
+  window.__expChannels=channels;             // 缓存供过滤/时间轴重绘
+  buildExpFilter(channels);
   const cx=180,cy=180,R=170;
   let g='<circle cx="180" cy="180" r="170" fill="#0f1419" stroke="#2c3a48"/>'+
         '<circle cx="180" cy="180" r="113.3" fill="none" stroke="#2c3a48"/>'+
@@ -977,6 +1039,7 @@ function drawExpSky(channels){
   Object.values(channels).forEach(ch=>{
     const rover=ch.role==='rover', bysat={};
     (ch.points||[]).forEach(p=>{const [t,sat,sysc,az,el]=p; if(el==null||el<0)return;
+      if(expSysOff.has(sysc))return;
       (bysat[sat]=bysat[sat]||{sys:sysc,pts:[]}).pts.push([t,az,el]);});
     Object.entries(bysat).forEach(([sat,info])=>{
       const color=SYS_COLOR[info.sys]||'#8b9bb0';
@@ -1015,8 +1078,50 @@ function expSkyReset(){eSc=1;eTx=0;eTy=0;applyExpTransform();}
   window.addEventListener('mouseup',()=>{pan=false;wrap.classList.remove('grabbing');});
 })();
 
+// ---------- 底部抽屉切换（一次只开一个；信号详情抽屉联动 render 渲染门控）----------
+function toggleDrawer(id){
+  const d=document.getElementById(id); if(!d)return;
+  const willOpen=!d.classList.contains('open');
+  document.querySelectorAll('.drawer').forEach(x=>x.classList.remove('open'));
+  if(willOpen)d.classList.add('open');
+  const det=document.getElementById('detailBody');
+  if(det){const detOpen=(id==='drawerDetail'&&willOpen);
+    det.classList.toggle('hidden',!detOpen);
+    if(detOpen&&window.__lastData)render(window.__lastData);}
+}
+
+// ---------- 底部时间轴：拖动回溯到某个录制周期 ----------
+let tlPeriods=[], tlTimer=null;
+async function tlReload(){
+  const lab=document.getElementById('tlLabel'), sl=document.getElementById('tlSlider');
+  try{
+    const j=await (await fetch('/api/recordings?sid='+encodeURIComponent(SID))).json();
+    const set=new Set();
+    Object.values(j.channels||{}).forEach(c=>(c.items||[]).forEach(it=>{
+      if(it.period_start!=null)set.add(it.period_start);}));
+    tlPeriods=[...set].sort((a,b)=>a-b);
+    sl.max=Math.max(0,tlPeriods.length-1); sl.value=sl.max;
+    if(tlPeriods.length){lab.textContent=`时间轴：${tlPeriods.length} 个周期，拖动回溯`; onTimeline(sl.value);}
+    else lab.textContent='时间轴：暂无已封存录制（连接并录满一个 10 分钟周期后可回溯）。';
+  }catch(e){lab.textContent='时间轴：读取失败 '+e;}
+}
+function onTimeline(idx){
+  idx=+idx; if(!tlPeriods.length)return;
+  const i=Math.min(idx,tlPeriods.length-1);
+  const start=tlPeriods[0], end=tlPeriods[i]+600;
+  document.getElementById('tlLabel').textContent=
+    `回溯至 ${new Date(tlPeriods[i]*1000).toLocaleString('zh-CN',{hour12:false})}（第 ${i+1}/${tlPeriods.length} 周期，累积轨迹）`;
+  clearTimeout(tlTimer);
+  tlTimer=setTimeout(async()=>{
+    const q=new URLSearchParams({sid:SID,mode:'range',start,end});
+    try{const j=await (await fetch('/api/track?'+q.toString())).json();
+      if(j.ok)drawExpSky(j.channels||{});}catch(e){}
+  },120);
+}
+
 // ---------- SSE ----------
 initCharts();
+loadExpRange(); tlReload();
 let _last=null, _pending=null, _rafQueued=false;
 const MIN_MS=900;
 function schedule(d){
