@@ -64,9 +64,14 @@ def normalize(parsed):
     prn = g("sat")
     if prn is None:
         return None
+    prn = int(prn)
+    # QZSS 1044 的 DF429 是 SVID(1-10)，而 MSM 观测里 QZSS 用 PRN(193-202)；
+    # 这里 +192 对齐，否则星历键 J01 与观测键 J194 不匹配 → 永远算不出位置。
+    if sysc == "J":
+        prn += 192
     try:
         eph = {
-            "sys": sysc, "prn": int(prn), "sat": f"{sysc}{int(prn):02d}",
+            "sys": sysc, "prn": prn, "sat": f"{sysc}{prn:02d}",
             "week": g("week"), "toe": g("toe"),
             "M0": g("M0") * PI, "dn": g("dn") * PI, "e": g("e"),
             "sqrtA": g("sqrtA"), "Om0": g("Om0") * PI, "i0": g("i0") * PI,

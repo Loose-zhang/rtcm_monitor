@@ -428,6 +428,7 @@
           <span class="note" style="position:absolute;top:9px;left:10px;z-index:2;margin:0;pointer-events:none">滚轮缩放 · 拖拽平移</span>
           <svg id="expSky" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block"></svg>
         </div>
+        <div id="expSysFilter" style="display:none;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center"></div>
         <div id="expTimeline" style="display:none;align-items:center;gap:10px;margin-top:8px">
           <select class="sel chsel" id="expSatSel" title="选择卫星：画出该星完整轨迹（仍可拖时间轴看周期）" onchange="renderExpPeriod(+document.getElementById('expTl').value)">
             <option value="">全部卫星（逐周期）</option>
@@ -972,6 +973,33 @@ async function importTrack(inp){
   }catch(e){st.textContent='导入失败: '+e;}
   inp.value='';   // 允许再次选同一文件
 }
+// 星座过滤：被隐藏的星座集合（C/G/E/R/J…）
+const __expSysOff=new Set();
+function buildExpSysFilter(syss){
+  const box=document.getElementById('expSysFilter'); if(!box)return;
+  const list=[...syss].sort();
+  // 清掉已不存在的星座的隐藏状态
+  [...__expSysOff].forEach(s=>{if(!syss.has(s))__expSysOff.delete(s);});
+  if(!list.length){box.style.display='none';box.innerHTML='';return;}
+  box.style.display='flex';
+  box.innerHTML='<span class="note" style="margin:0">星座：</span>'+list.map(s=>{
+    const on=!__expSysOff.has(s), col=SYS_COLOR[s]||'#8b9bb0';
+    return `<button onclick="toggleExpSys('${s}')" style="display:inline-flex;align-items:center;gap:5px;`+
+      `padding:2px 9px;border-radius:12px;font-size:12px;cursor:pointer;`+
+      `border:1px solid ${on?col:'#2c3a48'};background:${on?col+'22':'transparent'};`+
+      `color:${on?'#e6edf3':'#5f6b7a'}">`+
+      `<span style="width:8px;height:8px;border-radius:50%;background:${on?col:'#3a4756'}"></span>`+
+      `${s} ${SYS_NAME[s]||''}</button>`;
+  }).join('');
+}
+function toggleExpSys(s){
+  if(__expSysOff.has(s))__expSysOff.delete(s); else __expSysOff.add(s);
+  const d=window.__expData; if(d){const syss=new Set();
+    Object.values(d.channels||{}).forEach(ch=>(ch.points||[]).forEach(p=>{
+      if(p[4]!=null&&p[4]>=0)syss.add(p[2]);}));
+    buildExpSysFilter(syss);}
+  renderExpPeriod(+(document.getElementById('expTl')||{value:0}).value);
+}
 // 叠加图改为「按周期回放」：把所有通道数据缓存，时间轴每格=一个10min周期，只画该周期
 let __expTimer=null;
 function drawExpSky(channels){
@@ -982,16 +1010,17 @@ function drawExpSky(channels){
     if(p[4]!=null&&p[4]>=0)pset.add(Math.floor(p[0]/600));}));
   const periods=[...pset].sort((a,b)=>a-b);
   window.__expData={channels:channels||{},periods};
-  // 卫星下拉：收集所有卫星编号，保留当前选择（若仍存在）
-  const sats=new Set();
+  // 卫星下拉 + 星座过滤：收集卫星编号与星座
+  const sats=new Set(), syss=new Set();
   Object.values(channels||{}).forEach(ch=>(ch.points||[]).forEach(p=>{
-    if(p[4]!=null&&p[4]>=0)sats.add(p[1]);}));
+    if(p[4]!=null&&p[4]>=0){sats.add(p[1]);syss.add(p[2]);}}));
   const sel=document.getElementById('expSatSel');
   if(sel){const prev=sel.value;
     sel.innerHTML='<option value="">全部卫星（逐周期）</option>'+
       [...sats].sort().map(s=>`<option value="${s}">${s}</option>`).join('');
     sel.value=sats.has(prev)?prev:'';
   }
+  buildExpSysFilter(syss);
   const tl=document.getElementById('expTimeline'), sld=document.getElementById('expTl');
   if(tl&&sld){
     if(periods.length){tl.style.display='flex';sld.min=0;sld.max=periods.length-1;sld.value=periods.length-1;}
@@ -1026,13 +1055,19 @@ function renderExpPeriod(idx){
     idx=Math.max(0,Math.min(periods.length-1,idx|0));
     const pk=periods[idx];
     if(selSat){
-      // 单星「完整轨迹」：画该星所有周期的位置；当前周期点高亮
+      // 单星「完整轨迹」：测站点对齐到基站位置（共视则 ○✚ 同心，缺一侧只画一个）
+      // 先收集基站该星每周期位置
+      const baseByP={};
+      Object.values(channels).forEach(ch=>{if(ch.role==='rover')return;
+        (ch.points||[]).forEach(p=>{if(p[1]!==selSat||p[4]==null||p[4]<0)return;baseByP[Math.floor(p[0]/600)]=[p[3],p[4]];});});
       Object.values(channels).forEach(ch=>{
         const rover=ch.role==='rover', byp={};
         (ch.points||[]).forEach(p=>{if(p[1]!==selSat||p[4]==null||p[4]<0)return;byp[Math.floor(p[0]/600)]=p;});
         const keys=Object.keys(byp).map(Number).sort((a,b)=>a-b); if(!keys.length)return;
+        if(__expSysOff.has(byp[keys[0]][2]))return;   // 该星座被过滤
         const color=SYS_COLOR[byp[keys[0]][2]]||'#8b9bb0';
-        const xy=keys.map(k=>proj(byp[k][3],byp[k][4]));
+        const posOf=k=>{const p=byp[k]; return (rover&&baseByP[k])?proj(baseByP[k][0],baseByP[k][1]):proj(p[3],p[4]);};
+        const xy=keys.map(posOf);
         // 细淡引导线表示行进顺序（仅单星，不杂乱）
         const d=xy.map((q,i)=>(i?'L':'M')+q[0].toFixed(1)+' '+q[1].toFixed(1)).join(' ');
         g+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="1" opacity="0.3"${rover?' stroke-dasharray="4 3"':''}/>`;
@@ -1042,13 +1077,19 @@ function renderExpPeriod(idx){
           g+=`<g opacity="${cur?1:0.55}">${marker(x,y,rad,color,rover)}<title>${tip}</title></g>`;});
       });
     }else{
-      // 全部卫星：只画当前周期
+      // 全部卫星：只画当前周期；测站对齐到基站位置（同心=共视，缺一=单站可见）
       const seenLabel={};
+      // 本周期基站各卫星位置
+      const basePos={};
+      Object.values(channels).forEach(ch=>{if(ch.role==='rover')return;
+        (ch.points||[]).forEach(([t,sat,sysc,az,el,cn0])=>{
+          if(el==null||el<0||Math.floor(t/600)!==pk)return;basePos[sat]=[az,el];});});
       Object.values(channels).forEach(ch=>{
         const rover=ch.role==='rover';
         (ch.points||[]).forEach(([t,sat,sysc,az,el,cn0])=>{
-          if(el==null||el<0||Math.floor(t/600)!==pk)return;
-          const color=SYS_COLOR[sysc]||'#8b9bb0', [x,y]=proj(az,el), rad=skyRad(cn0||25),
+          if(el==null||el<0||Math.floor(t/600)!==pk||__expSysOff.has(sysc))return;
+          const pos=(rover&&basePos[sat])?basePos[sat]:[az,el];   // 测站对齐基站
+          const color=SYS_COLOR[sysc]||'#8b9bb0', [x,y]=proj(pos[0],pos[1]), rad=skyRad(cn0||25),
             tip=`${sat} [${rover?'测站':'基站'}]${cn0!=null?' · '+cn0.toFixed(0)+' dBHz':''}`;
           g+=`<g>${marker(x,y,rad,color,rover)}<title>${tip}</title></g>`;
           if(!seenLabel[sat]){seenLabel[sat]=1;
@@ -1068,7 +1109,8 @@ function renderExpPeriod(idx){
     '<text x="66" y="19" fill="#8b9bb0" font-size="9">测站</text></g>';
   svg.innerHTML=`<g id="expSkyContent" transform="translate(${eTx} ${eTy}) scale(${eSc})">${g}</g>`+fixedLegend;
   document.getElementById('expLegend').innerHTML=
-    '<span class="it">○ 基站 · ✚ 测站 · 颜色 = 星座 · 大小∝CN0</span>'+
+    '<span class="it">○ 基站 · ✚ 测站 · 大小∝CN0</span>'+
+    '<span class="it">○✚ 同心 = 共视；只○ = 仅基站；只✚ = 仅测站</span>'+
     '<span class="it">'+(selSat?selSat+' 完整轨迹（黄圈=当前周期）':'拖时间轴 / ▶ 逐周期播放')+'</span>';
 }
 function expPlayToggle(){
