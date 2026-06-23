@@ -8,18 +8,28 @@
 <style>
   :root{
     --bg:#0f1419; --card:#1a212b; --card2:#222c38; --card3:#283443; --line:#2c3a48;
-    --txt:#e6edf3; --mut:#8b9bb0; --acc:#4aa8ff;
+    --txt:#e6edf3; --mut:#a4b1c4; --acc:#4aa8ff;
     --ok:#3fb950; --warn:#d29922; --err:#f85149; --purple:#bc8cff;
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;
-       background:var(--bg);color:var(--txt);font-size:13px}
+       background:var(--bg);color:var(--txt);font-size:13px;touch-action:manipulation}
   svg.ic{width:15px;height:15px;flex:none;stroke:currentColor;stroke-width:2;
          stroke-linecap:round;stroke-linejoin:round;fill:none;vertical-align:-2px}
 
+  /* ---------- accessibility & touch ---------- */
+  button:focus-visible,input:focus-visible,select:focus-visible,
+  .chead:focus-visible,[tabindex]:focus-visible,#matrix tr:focus-visible{
+    outline:2px solid var(--acc);outline-offset:2px}
+  @media(prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;
+      animation-iteration-count:1!important;transition-duration:.001ms!important}
+  }
+
   /* ---------- header ---------- */
-  header{display:flex;align-items:center;gap:14px;padding:10px 18px;
+  header{display:flex;align-items:center;gap:8px 14px;padding:7px 18px 9px;
          background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:50;flex-wrap:wrap}
+  #statePill{margin-left:auto}
   .brand{display:flex;align-items:center;gap:9px}
   .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.5px}
   .brand .sub{color:var(--mut);font-weight:400;font-size:12px;margin-left:2px}
@@ -38,9 +48,9 @@
   .pill.idle{background:rgba(248,81,73,.10);color:#e08a85}
 
   /* ---------- KPI strip ---------- */
-  .kpis{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
-  .kpi{display:flex;align-items:center;gap:9px;background:linear-gradient(145deg,var(--card2),var(--card3));
-       border:1px solid var(--line);border-radius:8px;padding:7px 13px;min-width:100px;
+  .kpis{display:flex;gap:10px;flex-basis:100%;margin-left:0;flex-wrap:wrap}
+  .kpi{flex:1 1 0;display:flex;align-items:center;gap:9px;background:linear-gradient(145deg,var(--card2),var(--card3));
+       border:1px solid var(--line);border-radius:8px;padding:7px 13px;min-width:96px;
        box-shadow:0 3px 10px rgba(0,0,0,.25)}
   .kpi .kic{display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:7px;
             background:rgba(0,0,0,.25);flex:none}
@@ -59,7 +69,7 @@
   .grid2{display:grid;grid-template-columns:2fr 1fr;gap:12px;min-width:0}
   .grid-ts{display:grid;grid-template-columns:3fr 2fr;gap:12px;min-width:0;align-items:start}
   /* 巨幕：天空图(左 45%) + 频点矩阵(右 55%)，等高占满视口高度 */
-  .skyrow{display:grid;grid-template-columns:45fr 55fr;gap:12px;min-width:0;height:78vh}
+  .skyrow{display:grid;grid-template-columns:45fr 55fr;gap:12px;min-width:0;height:78dvh}
   .skyrow>section{height:100%;display:flex;flex-direction:column}
   .skyrow .bd{display:flex;flex-direction:column;flex:1;min-height:0}
   .skywrap{flex:1;min-height:0;position:relative;overflow:hidden;border-radius:8px;
@@ -74,7 +84,18 @@
     .grid2,.grid-ts{grid-template-columns:1fr}
     .skyrow{grid-template-columns:1fr;height:auto}
     .skyrow>section{height:auto}
-    .skywrap{height:60vh}
+    .skywrap{height:60dvh}
+  }
+  @media(max-width:768px){
+    .kpis{width:100%;margin-left:0;display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px}
+    .kpi{min-width:0}
+    /* ≥16px inputs avoid iOS auto-zoom on focus */
+    #conn input,#conn select,#conn2 input,#connR input,#connR select,
+    input[type=datetime-local]{font-size:16px}
+    /* larger hit areas for compact controls */
+    .skybtn,.systabs button,#expLast button,.modetabs button{min-height:38px}
+    .skybtn{padding:7px 12px}
   }
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:10px;min-width:0;overflow:hidden}
@@ -151,11 +172,10 @@
   .rtag.rover{background:rgba(255,166,87,.16);color:#ffb877;border:1px solid rgba(255,166,87,.45)}
   /* 合并单元格：左=基站 右=测站，各自按 CN0 着色 */
   td.cn0c{padding:0}
-  .cn0split{display:flex;width:100%;height:100%;min-height:20px}
-  .cn0split>span{flex:1 1 0;min-width:0;padding:3px 2px;font-weight:600;color:#06121f;
+  .cn0split{display:flex;width:100%;height:100%;min-height:20px;gap:2px;padding:2px}
+  .cn0split>span{flex:1 1 0;min-width:0;padding:3px 2px;font-weight:600;border-radius:4px;
                  font-variant-numeric:tabular-nums;line-height:1.4}
-  .cn0split>span.b{border-right:1px solid rgba(15,20,25,.4)}
-  .cn0split>span.empty{color:#46525f;background:transparent;font-weight:400}
+  .cn0split>span.empty{color:#6b7888;background:transparent;font-weight:400}
   .cn0split>span.crit{animation:blink 1.1s ease-in-out infinite}
   /* 来源图例标头 */
   .srcleg{font-size:11px;color:var(--mut);font-weight:400;display:inline-flex;align-items:center;gap:10px;margin-left:2px}
@@ -188,7 +208,7 @@
     font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:12px;line-height:1.65;
     height:230px;overflow-y:auto;color:var(--mut);margin-top:10px}
   .log-item{white-space:pre-wrap;word-break:break-all}
-  .log-item .lt{color:#5f6b7a;margin-right:8px}
+  .log-item .lt{color:#8190a3;margin-right:8px}
   .log-item.error{color:var(--err)}
   .log-item.warn{color:var(--warn)}
   .log-item.success{color:#56d364}
@@ -423,7 +443,7 @@
         </div>
         <input id="expImport" type="file" accept=".csv,.zip" style="display:none" onchange="importTrack(this)">
         <div class="note" id="expStatus" style="min-height:16px"></div>
-        <div class="skywrap" id="expSkyWrap" style="height:46vh;margin-top:8px;touch-action:none">
+        <div class="skywrap" id="expSkyWrap" style="height:46dvh;margin-top:8px;touch-action:none">
           <button class="skybtn" onclick="expSkyReset()" style="position:absolute;top:6px;right:6px;z-index:2">复位</button>
           <span class="note" style="position:absolute;top:9px;left:10px;z-index:2;margin:0;pointer-events:none">滚轮缩放 · 拖拽平移</span>
           <svg id="expSky" viewBox="0 0 360 360" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block"></svg>
@@ -433,7 +453,7 @@
           <select class="sel chsel" id="expSatSel" title="选择卫星：画出该星完整轨迹（仍可拖时间轴看周期）" onchange="renderExpPeriod(+document.getElementById('expTl').value)">
             <option value="">全部卫星（逐周期）</option>
           </select>
-          <button class="skybtn" id="expPlay" onclick="expPlayToggle()" title="自动逐周期播放/暂停">▶</button>
+          <button class="skybtn" id="expPlay" onclick="expPlayToggle()" aria-label="逐周期播放/暂停" title="自动逐周期播放/暂停"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor;stroke:none"><path d="M7 4v16l13-8z"/></svg></button>
           <input id="expTl" type="range" min="0" max="0" value="0" step="1" style="flex:1" oninput="renderExpPeriod(+this.value)">
           <span class="note" id="expTlLabel" style="margin:0;white-space:nowrap;min-width:150px;text-align:right;font-variant-numeric:tabular-nums"></span>
         </div>
@@ -460,9 +480,22 @@ function toggleCard(id, head){
   const el=document.getElementById(id);
   el.classList.toggle('hidden');
   head.classList.toggle('collapsed', el.classList.contains('hidden'));
+  head.setAttribute('aria-expanded', String(!el.classList.contains('hidden')));
   // when the detail panel opens, render the (previously skipped) CN0 chart now
   if(id==='detailBody' && !el.classList.contains('hidden') && window.__lastData) render(window.__lastData);
 }
+
+// ---------- inline SVG icons (replace emoji as structural icons) ----------
+const SVG_ICON={
+  error:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--err)"><path d="M12 2 3 6v6c0 5 3.8 8.7 9 10 5.2-1.3 9-5 9-10V6z"/><path d="M12 8v4M12 16h.01"/></svg>',
+  warn:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--warn)"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  info:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--mut)"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>',
+  ok:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="color:var(--ok)"><path d="M20 6 9 17l-5-5"/></svg>',
+  empty:'<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+};
+const ICO_PLAY='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor;stroke:none"><path d="M7 4v16l13-8z"/></svg>';
+const ICO_PAUSE='<svg class="ic" viewBox="0 0 24 24" aria-hidden="true" style="fill:currentColor;stroke:none"><path d="M7 4h3v16H7zM14 4h3v16h-3z"/></svg>';
+const ICO_REC='<svg viewBox="0 0 24 24" aria-hidden="true" style="width:9px;height:9px;fill:currentColor;vertical-align:-1px;margin-right:3px"><circle cx="12" cy="12" r="8"/></svg>';
 
 // ---------- signal color / order ----------
 const SIG_COLOR = {
@@ -477,10 +510,15 @@ const SIG_ORDER = ['B1I','B1C','B1A','B2I','B2a','B2b','B2ab','B3I','B3A',
                    'L1','L2','L5','E1','E5a','E5b','E5(a+b)','E6','G1','G2','G3'];
 const SYS_COLOR = {C:'#f85149',G:'#4aa8ff',E:'#3fb950',R:'#ffa657',J:'#bc8cff',S:'#8b9bb0',I:'#d2a8ff'};
 function sigColor(s){return SIG_COLOR[s]||'#8b9bb0';}
+// 柔和热力：淡色底（同色字在 cn0Text）——避免满格高饱和色块刺眼
 function cn0Color(v){ if(!v) return 'transparent';
-  if(v>=45)return 'rgba(63,185,80,.85)'; if(v>=40)return 'rgba(120,200,80,.8)';
-  if(v>=35)return 'rgba(210,180,34,.8)'; if(v>=30)return 'rgba(210,140,34,.8)';
-  return 'rgba(248,81,73,.8)'; }
+  if(v>=45)return 'rgba(63,185,80,.22)'; if(v>=40)return 'rgba(154,193,77,.20)';
+  if(v>=35)return 'rgba(210,180,34,.20)'; if(v>=30)return 'rgba(216,140,60,.20)';
+  return 'rgba(248,81,73,.20)'; }
+function cn0Text(v){ if(!v) return '#6b7888';
+  if(v>=45)return '#63d178'; if(v>=40)return '#b7d96a';
+  if(v>=35)return '#e6cf57'; if(v>=30)return '#eaa766';
+  return '#ff8b83'; }
 
 // ---------- mode (base + rover) ----------
 let mode='ntrip', modeR='ntrip';
@@ -501,11 +539,15 @@ async function connect(){
   if(mode==='ntrip'){body.host=host.value;body.port=port.value;body.mountpoint=mount.value;
     body.user=user.value;body.password=pass.value;body.gga=gga.value;}
   else{body.path=path.value;body.speed=speed.value;}
-  const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)});
-  const j=await r.json();
-  if(!j.ok){alert('基站连接失败: '+(j.error||''));return;}
-  btnConn.disabled=true;btnDisc.disabled=false;
+  const txt=document.getElementById('srcSummaryTxt');
+  btnConn.disabled=true; if(txt)txt.textContent='连接中…';
+  try{
+    const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!j.ok){if(txt)txt.textContent='基站连接失败: '+(j.error||'');btnConn.disabled=false;return;}
+    btnDisc.disabled=false;
+  }catch(e){if(txt)txt.textContent='基站连接失败: '+e;btnConn.disabled=false;}
 }
 async function disconnect(){await fetch('/api/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({sid:SID,role:'base'})});
@@ -515,11 +557,15 @@ async function connectR(){
   if(modeR==='ntrip'){body.host=rhost.value;body.port=rport.value;body.mountpoint=rmount.value;
     body.user=ruser.value;body.password=rpass.value;body.gga=rgga.value;}
   else{body.path=rpath.value;body.speed=rspeed.value;}
-  const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)});
-  const j=await r.json();
-  if(!j.ok){alert('测站连接失败: '+(j.error||''));return;}
-  rbtnConn.disabled=true;rbtnDisc.disabled=false;
+  const txt=document.getElementById('srcSummaryTxtR');
+  rbtnConn.disabled=true; if(txt)txt.textContent='连接中…';
+  try{
+    const r=await fetch('/api/connect',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!j.ok){if(txt)txt.textContent='测站连接失败: '+(j.error||'');rbtnConn.disabled=false;return;}
+    rbtnDisc.disabled=false;
+  }catch(e){if(txt)txt.textContent='测站连接失败: '+e;rbtnConn.disabled=false;}
 }
 async function disconnectR(){await fetch('/api/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({sid:SID,role:'rover'})});
@@ -527,9 +573,13 @@ async function disconnectR(){await fetch('/api/disconnect',{method:'POST',header
 async function connectEph(){
   const body={mode:'ntrip',sid:SID,host:ehost.value,port:eport.value,mountpoint:emount.value,
               user:euser.value,password:epass.value};
-  const r=await fetch('/api/connect_eph',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(body)});
-  const j=await r.json(); if(!j.ok)alert('星历连接失败: '+(j.error||''));
+  const es=document.getElementById('ephStat'); if(es){es.textContent='连接中…';es.style.color='var(--mut)';}
+  try{
+    const r=await fetch('/api/connect_eph',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    const j=await r.json();
+    if(!j.ok&&es){es.textContent='星历连接失败: '+(j.error||'');es.style.color='var(--err)';}
+  }catch(e){if(es){es.textContent='星历连接失败: '+e;es.style.color='var(--err)';}}
 }
 async function disconnectEph(){await fetch('/api/disconnect_eph',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({sid:SID})});}
@@ -624,7 +674,7 @@ function render(d){
     b.classList.remove('hidden');
     let cur='';
     if(r.cur_period){const m=/T(\d{2})(\d{2})/.exec(r.cur_period); cur=m?` · ${m[1]}:${m[2]}`:'';}
-    b.textContent=`● 录制中 · ${r.periods} 周期${cur}`;
+    b.innerHTML=ICO_REC+`录制中 · ${r.periods} 周期${cur}`;
     b.title=`录制底座：每10分钟保留一个完整历元+卫星位置${r.cur_period?' · 当前周期 '+r.cur_period:''}`;
     b.classList.toggle('err', !!r.error);};
   recBadge('recBadge', _ch.base);
@@ -699,7 +749,7 @@ function render(d){
   const showBoth=(matRole==='both');
   // 单个 CN0 色块
   const cn0span=(g,cls)=> (g&&g.cn0)
-    ? `<span class="${cls}${g.cn0<25?' crit':''}" style="background:${cn0Color(g.cn0)}" title="${g.code} · ${g.freq_mhz} MHz · CN0 ${g.cn0}">${g.cn0}</span>`
+    ? `<span class="${cls}${g.cn0<25?' crit':''}" style="background:${cn0Color(g.cn0)};color:${cn0Text(g.cn0)}" title="${g.code} · ${g.freq_mhz} MHz · CN0 ${g.cn0}">${g.cn0}</span>`
     : `<span class="${cls} empty">-</span>`;
   let h='<tr><th>卫星</th><th>系统</th>'+mSigs.map(s=>`<th>${s}</th>`).join('')+'</tr>';
   matRows.forEach(a=>{
@@ -726,7 +776,7 @@ function render(d){
     h+='</tr>';
   });
   if(!matRows.length)
-    h+=`<tr><td colspan="${mSigs.length+2}" style="border:none"><div class="mat-empty">⚙ ${sats.length?'该通道暂无卫星':'等待接入 NTRIP 数据源…'}</div></td></tr>`;
+    h+=`<tr><td colspan="${mSigs.length+2}" style="border:none"><div class="mat-empty">${SVG_ICON.empty} ${sats.length?'该通道暂无卫星':'等待接入 NTRIP 数据源…'}</div></td></tr>`;
   document.getElementById('matrix').innerHTML=h;
 
   // ----- anomalies: aggregate satellites by (level,msg) into tag boxes -----
@@ -739,11 +789,11 @@ function render(d){
   });
   const order={error:0,warn:1,info:2};
   const glist=[...groups.values()].sort((a,b)=>order[a.level]-order[b.level]);
-  const ICON={error:'🔴',warn:'🟡',info:'⚪'};
+  const ICON=SVG_ICON;
   const ae=document.getElementById('anoms');
   if(!glist.length){
     const anyBds=sats.some(s=>s.recon);
-    ae.innerHTML=`<div class="anombox ok"><div class="ah">✓ ${anyBds?'所有北斗卫星信号与 2026/04 重构计划一致':'暂无北斗卫星数据'}</div></div>`;
+    ae.innerHTML=`<div class="anombox ok"><div class="ah">${SVG_ICON.ok} ${anyBds?'所有北斗卫星信号与 2026/04 重构计划一致':'暂无北斗卫星数据'}</div></div>`;
   } else {
     ae.innerHTML=glist.map(g=>{
       const tags=g.sats.map(s=>`<span class="atag">${s}</span>`).join('');
@@ -803,8 +853,8 @@ function drawSky(sats){
   const baseSet=new Set(sats.filter(s=>s.role==='base').map(s=>s.sat));
   // 同心叠加方案：基站=空心圆，外径∝CN0(保底6px)；测站=十字✚，臂长∝CN0(保底4px)
   // 十字溢出圆=测站更强；十字缩在圆内=测站更弱；只圆=测站失锁；只十字=基站没收到
-  const skyCircR =c=>6+Math.max(0,Math.min(c||20,52)-20)*0.25;   // 6 .. 14px
-  const skyCrossL=c=>4+Math.max(0,Math.min(c||20,52)-20)*0.25;   // 4 .. 12px
+  const skyCircR =c=>5+Math.max(0,Math.min(c||20,52)-20)*0.19;   // 5 .. ~11px
+  const skyCrossL=c=>4+Math.max(0,Math.min(c||20,52)-20)*0.16;   // 4 .. ~9px
   const baseCn0={}, roverCn0={};
   sats.forEach(s=>{ if(s.role==='base')baseCn0[s.sat]=s.maxcn0||25; else if(s.role==='rover')roverCn0[s.sat]=s.maxcn0||25; });
   const pos={}, labels=[];
@@ -817,35 +867,38 @@ function drawSky(sats){
       const L=skyCrossL(cn0); outer=L;
       const bc=baseCn0[s.sat];
       const tip=`${s.sat} [测站] ${extra?extra+' ':''}CN0=${cn0}`+(bc!=null?` · 基站=${bc} · Δ=${cn0-bc>=0?'+':''}${cn0-bc}`:'');
-      m=`<path d="M${f(x-L)} ${yf}H${f(x+L)} M${xf} ${f(y-L)}V${f(y+L)}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"><title>${tip}</title></path>`;
+      m=`<path d="M${f(x-L)} ${yf}H${f(x+L)} M${xf} ${f(y-L)}V${f(y+L)}" stroke="${color}" stroke-opacity="0.95" stroke-width="1.7" stroke-linecap="round"><title>${tip}</title></path>`;
     }else{
       const R=skyCircR(cn0); outer=R;
       const rc=roverCn0[s.sat];
       const tip=`${s.sat} [基站] ${extra?extra+' ':''}CN0=${cn0}`+(rc!=null?` · 测站=${rc} · Δ=${rc-cn0>=0?'+':''}${rc-cn0}`:'');
-      m=`<circle cx="${xf}" cy="${yf}" r="${f(R)}" fill="${color}" fill-opacity="0.1" stroke="${color}" stroke-width="1.5"><title>${tip}</title></circle>`;
+      m=`<circle cx="${xf}" cy="${yf}" r="${f(R)}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-opacity="0.9" stroke-width="1.3"><title>${tip}</title></circle>`;
     }
     pos[key]={x,y,outer};
     if(s.role==='base'||!baseSet.has(s.sat)) labels.push({x,y:y-outer-2.5,y0:y-outer-2.5,text:s.sat});
     return `<g class="skm" data-key="${key}">${m}</g>`;
   }
-  let g='<circle cx="160" cy="160" r="150" fill="#0f1419" stroke="#2c3a48"/>'+
-        '<circle cx="160" cy="160" r="100" fill="none" stroke="#2c3a48"/>'+
-        '<circle cx="160" cy="160" r="50" fill="none" stroke="#2c3a48"/>';
+  let g='<defs><radialGradient id="skyBg" cx="50%" cy="50%" r="50%">'+
+        '<stop offset="0%" stop-color="#15202c"/><stop offset="70%" stop-color="#0e151d"/>'+
+        '<stop offset="100%" stop-color="#0a0f15"/></radialGradient></defs>'+
+        '<circle cx="160" cy="160" r="150" fill="url(#skyBg)" stroke="#2c3a48"/>'+
+        '<circle cx="160" cy="160" r="100" fill="none" stroke="#22303d"/>'+
+        '<circle cx="160" cy="160" r="50" fill="none" stroke="#22303d"/>';
   const note=document.getElementById('skyNote');
   if(hasAzEl){
-    g+='<line x1="160" y1="10" x2="160" y2="310" stroke="#2c3a48"/>'+
-       '<line x1="10" y1="160" x2="310" y2="160" stroke="#2c3a48"/>'+
-       '<text x="160" y="22" fill="#8b9bb0" font-size="10" text-anchor="middle">N</text>'+
-       '<text x="304" y="164" fill="#8b9bb0" font-size="10" text-anchor="middle">E</text>'+
-       '<text x="160" y="306" fill="#8b9bb0" font-size="10" text-anchor="middle">S</text>'+
-       '<text x="16" y="164" fill="#8b9bb0" font-size="10" text-anchor="middle">W</text>'+
-       '<text x="168" y="110" fill="#5f6b7a" font-size="8">60°</text>'+
-       '<text x="168" y="60" fill="#5f6b7a" font-size="8">30°</text>'+
+    g+='<line x1="160" y1="10" x2="160" y2="310" stroke="#22303d"/>'+
+       '<line x1="10" y1="160" x2="310" y2="160" stroke="#22303d"/>'+
+       '<text x="160" y="22" fill="#a4b1c4" font-size="10" text-anchor="middle">N</text>'+
+       '<text x="304" y="164" fill="#a4b1c4" font-size="10" text-anchor="middle">E</text>'+
+       '<text x="160" y="306" fill="#a4b1c4" font-size="10" text-anchor="middle">S</text>'+
+       '<text x="16" y="164" fill="#a4b1c4" font-size="10" text-anchor="middle">W</text>'+
+       '<text x="168" y="110" fill="#6b7888" font-size="8">60°</text>'+
+       '<text x="168" y="60" fill="#6b7888" font-size="8">30°</text>'+
        // 常用高度角参考线：外圈 10° (近地平) / 内圈 75° (近天顶)；r = R*(90-el)/90
-       '<circle cx="160" cy="160" r="133.3" fill="none" stroke="#f0a020" stroke-width="1.5" stroke-dasharray="6 4"/>'+
-       '<circle cx="160" cy="160" r="25" fill="none" stroke="#f0a020" stroke-width="1.5" stroke-dasharray="6 4"/>'+
-       '<text x="256" y="62" fill="#f0a020" font-size="9" font-weight="700" text-anchor="middle">10°</text>'+
-       '<text x="178" y="142" fill="#f0a020" font-size="9" font-weight="700" text-anchor="middle">75°</text>';
+       '<circle cx="160" cy="160" r="133.3" fill="none" stroke="#c9962a" stroke-opacity="0.5" stroke-width="1.1" stroke-dasharray="5 5"/>'+
+       '<circle cx="160" cy="160" r="25" fill="none" stroke="#c9962a" stroke-opacity="0.5" stroke-width="1.1" stroke-dasharray="5 5"/>'+
+       '<text x="256" y="62" fill="#c9962a" fill-opacity="0.85" font-size="9" font-weight="600" text-anchor="middle">10°</text>'+
+       '<text x="178" y="142" fill="#c9962a" fill-opacity="0.85" font-size="9" font-weight="600" text-anchor="middle">75°</text>';
     sats.forEach(s=>{
       if(s.el==null||s.az==null||s.el<0)return;
       const r=R*(90-s.el)/90, a=s.az*Math.PI/180;
@@ -882,7 +935,16 @@ function applySkyTransform(){const g=document.getElementById('skyContent'); if(g
 function skyReset(){skSc=1;skTx=0;skTy=0;applySkyTransform();}
 function svgPt(evt,svgId){const svg=document.getElementById(svgId||'sky');if(!svg||!svg.getScreenCTM)return{x:0,y:0};const pt=svg.createSVGPoint();pt.x=evt.clientX;pt.y=evt.clientY;const m=svg.getScreenCTM();return m?pt.matrixTransform(m.inverse()):{x:0,y:0};}
 // matrix row (按卫星) -> highlight satellite in skyplot (含基站+测站)
-function hoverSat(sat,on){ window.__skyHover= on?sat:null; if(window.__lastData) drawSky(byRole(window.__lastData.sats,skyRole)); }
+// 只更新高亮层 #skHL，避免每次悬浮重建整张天空图
+function updateSkyHL(){
+  const content=document.getElementById('skyContent'); if(!content)return;
+  const old=document.getElementById('skHL'); if(old)old.remove();
+  const html=skyHL(window.__skyPos||{}); if(!html)return;
+  const tmp=document.createElementNS('http://www.w3.org/2000/svg','g');
+  tmp.innerHTML=html;                                  // 在 SVG 命名空间下解析子节点
+  while(tmp.firstChild) content.appendChild(tmp.firstChild);
+}
+function hoverSat(sat,on){ window.__skyHover= on?sat:null; updateSkyHL(); }
 // skyplot marker -> highlight + scroll merged matrix row
 function setHoverRow(key){
   document.querySelectorAll('#matrix tr.rowhl').forEach(r=>r.classList.remove('rowhl'));
@@ -963,7 +1025,7 @@ async function doExport(){
     const a=document.createElement('a'); a.href=j.zip_url; a.download=j.zip_name||'export.zip';
     document.body.appendChild(a); a.click(); a.remove();
     const chs=(j.channels||[]).map(c=>`${c.folder}(${c.role}) ${c.periods}周期/${c.track_points}点`).join(' · ');
-    st.innerHTML=`✓ 已导出 ${j.total_periods} 周期 · ZIP 已开始下载<br>服务端目录：<code>${escHtml(j.server_dir)}</code><br>${escHtml(chs)}`;
+    st.innerHTML=`${SVG_ICON.ok} 已导出 ${j.total_periods} 周期 · ZIP 已开始下载<br>服务端目录：<code>${escHtml(j.server_dir)}</code><br>${escHtml(chs)}`;
     previewTrack();
   }catch(e){st.textContent='导出失败: '+e;}
 }
@@ -1035,7 +1097,7 @@ function _expSatTrack(sat,channels,pk,proj,marker,label){
 // 叠加图改为「按周期回放」：把所有通道数据缓存，时间轴每格=一个10min周期，只画该周期
 let __expTimer=null;
 function drawExpSky(channels){
-  if(__expTimer){clearInterval(__expTimer);__expTimer=null;const b=document.getElementById('expPlay');if(b)b.textContent='▶';}
+  if(__expTimer){clearInterval(__expTimer);__expTimer=null;const b=document.getElementById('expPlay');if(b)b.innerHTML=ICO_PLAY;}
   // 收集所有出现过的周期(UTC 整10分对齐)
   const pset=new Set();
   Object.values(channels||{}).forEach(ch=>(ch.points||[]).forEach(p=>{
@@ -1139,9 +1201,9 @@ function renderExpPeriod(idx){
 }
 function expPlayToggle(){
   const btn=document.getElementById('expPlay'), data=window.__expData;
-  if(__expTimer){clearInterval(__expTimer);__expTimer=null;if(btn)btn.textContent='▶';return;}
+  if(__expTimer){clearInterval(__expTimer);__expTimer=null;if(btn)btn.innerHTML=ICO_PLAY;return;}
   if(!data||!data.periods.length)return;
-  if(btn)btn.textContent='⏸';
+  if(btn)btn.innerHTML=ICO_PAUSE;
   __expTimer=setInterval(()=>{
     const sl=document.getElementById('expTl'); let i=(+sl.value)+1;
     if(i>data.periods.length-1)i=0;
@@ -1161,6 +1223,25 @@ function expSkyReset(){eSc=1;eTx=0;eTy=0;applyExpTransform();}
   wrap.addEventListener('mousedown',e=>{if(e.button!==0)return;pan=true;ps=svgPt(e,'expSky');wrap.classList.add('grabbing');});
   window.addEventListener('mousemove',e=>{if(!pan)return;const P=svgPt(e,'expSky');eTx+=P.x-ps.x;eTy+=P.y-ps.y;ps=P;applyExpTransform();});
   window.addEventListener('mouseup',()=>{pan=false;wrap.classList.remove('grabbing');});
+})();
+
+// ---------- a11y wiring: keyboard collapsibles, label association, numeric inputs ----------
+(function initA11y(){
+  document.querySelectorAll('.chead').forEach(h=>{
+    h.setAttribute('role','button');
+    h.setAttribute('tabindex','0');
+    h.setAttribute('aria-expanded', String(!h.classList.contains('collapsed')));
+    h.addEventListener('keydown',e=>{
+      if(e.key==='Enter'||e.key===' '||e.key==='Spacebar'){e.preventDefault();h.click();}
+    });
+  });
+  document.querySelectorAll('.fld').forEach(f=>{
+    const lab=f.querySelector('label'), inp=f.querySelector('input,select');
+    if(lab&&inp){ if(!inp.id) inp.id='in_'+Math.random().toString(36).slice(2);
+      lab.setAttribute('for',inp.id); }
+  });
+  ['port','rport','eport','speed','rspeed'].forEach(id=>{
+    const e=document.getElementById(id); if(e)e.setAttribute('inputmode','numeric');});
 })();
 
 // ---------- SSE ----------
