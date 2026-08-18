@@ -10,7 +10,9 @@ Run:  python app.py   ->  open http://127.0.0.1:7999
 """
 import argparse
 import json
+import math
 import os
+import statistics
 import threading
 import time
 from collections import defaultdict, deque
@@ -20,6 +22,7 @@ from flask import Flask, Response, request, send_from_directory
 import rtcm_decode as rd
 import bds_recon as br
 import gnss_orbit as orb
+import gnss_spp as spp
 import recorder as rec
 import exporter as exp
 
@@ -66,6 +69,7 @@ class Channel:
         self.sats = defaultdict(lambda: {"signals": {}})
         self.station = None
         self.tow_ms = None
+        self.tow_ms_by_sys = {}
         self.last_sysname = None
         self.msg_count = 0
         self.msg_times = []                     # timestamps for rate calc
@@ -81,6 +85,7 @@ class Channel:
         self.sats = defaultdict(lambda: {"signals": {}})
         self.station = None
         self.tow_ms = None
+        self.tow_ms_by_sys = {}
         self.last_sysname = None
         self.msg_count = 0
         self.msg_times = []
@@ -95,8 +100,12 @@ class State:
         self.lock = threading.Lock()
         # two observation channels: base (基站) + rover (测站)
         self.channels = {"base": Channel("基站"), "rover": Channel("测站")}
-        self.base_xyz = None         # base ECEF from 1005, shared for az/el
+        self.base_xyz = None         # base ECEF from RTCM or automatic SPP
         self.base_xyz_role = None    # which channel supplied base_xyz
+        self.base_xyz_source = None  # RTCM1005/1006 or SPP-<system>
+        self.base_xyz_quality = None
+        self._spp_history = defaultdict(lambda: deque(maxlen=12))
+        self._spp_last_epoch = {}
         # broadcast ephemeris (separate stream, shared by both channels)
         self.eph_source = None
         self.eph = {}                # sat -> normalized eph (+ 'ts')
@@ -109,6 +118,107 @@ class State:
     def log(self, level, msg):
         """level: info / success / warn / error"""
         self.events.append({"ts": time.time(), "level": level, "msg": msg})
+
+    def _clear_base_position_locked(self):
+        self.base_xyz = None
+        self.base_xyz_role = None
+        self.base_xyz_source = None
+        self.base_xyz_quality = None
+        self._spp_history = defaultdict(lambda: deque(maxlen=12))
+        self._spp_last_epoch = {}
+
+    def _prepare_spp_locked(self, role, system, tow_ms):
+        """Copy one epoch's best pseudorange per satellite for lock-free SPP."""
+        if role != "base" or tow_ms is None or system not in orb.CONST:
+            return None
+        # A standard reference-station coordinate always outranks coarse SPP.
+        if self.base_xyz_source and self.base_xyz_source.startswith("RTCM"):
+            return None
+        ch = self.channels[role]
+        observations = []
+        eph = {}
+        for sat, sv in ch.sats.items():
+            if sv.get("sys") != system:
+                continue
+            candidates = [v for v in sv["signals"].values()
+                          if v.get("tow_ms") == tow_ms
+                          and v.get("pseudorange") is not None]
+            if not candidates:
+                continue
+            best = max(candidates, key=lambda v: v.get("cn0") or 0)
+            observations.append({"sat": sat, "pseudorange": best["pseudorange"],
+                                 "cn0": best.get("cn0")})
+            if sat in self.eph:
+                eph[sat] = dict(self.eph[sat])
+        if len(observations) < spp.MIN_SATS:
+            if self.base_xyz is None:
+                self.base_xyz_quality = {
+                    "state": "waiting", "system": system,
+                    "reason": "有效伪距不足", "observations": len(observations),
+                    "required": spp.MIN_SATS,
+                }
+            return None
+        if len(eph) < spp.MIN_SATS:
+            if self.base_xyz is None:
+                self.base_xyz_quality = {
+                    "state": "waiting", "system": system,
+                    "reason": "匹配广播星历不足", "observations": len(observations),
+                    "ephemerides": len(eph), "required": spp.MIN_SATS,
+                }
+            return None
+        initial = self.base_xyz if (self.base_xyz_source or "").startswith("SPP-") else None
+        return observations, eph, tow_ms, system, initial
+
+    def _run_spp(self, job):
+        observations, eph, tow_ms, system, initial = job
+        solution = spp.solve(observations, eph, tow_ms, system, initial)
+        if solution is None:
+            with self.lock:
+                if self.base_xyz is None:
+                    self.base_xyz_quality = {
+                        "state": "rejected", "system": system,
+                        "reason": "星历过期、卫星几何或伪距残差未通过校验",
+                        "observations": len(observations),
+                        "ephemerides": len(eph),
+                    }
+            return
+        with self.lock:
+            if self.base_xyz_source and self.base_xyz_source.startswith("RTCM"):
+                return
+            active_system = (self.base_xyz_source or "").removeprefix("SPP-")
+            if (self.base_xyz_source or "").startswith("SPP-") \
+                    and active_system != system:
+                return
+            if self._spp_last_epoch.get(system) == tow_ms:
+                return
+            self._spp_last_epoch[system] = tow_ms
+            hist = self._spp_history[system]
+            hist.append(solution)
+            recent = list(hist)[-5:]
+            self.base_xyz_quality = {
+                "state": "collecting" if len(recent) < 3 else "checking",
+                "system": system, "samples": len(recent),
+                "nsat": solution["nsat"], "rms_m": solution["rms_m"],
+            }
+            if len(recent) < 3:
+                return
+            xyz = tuple(statistics.median(s["xyz"][i] for s in recent)
+                        for i in range(3))
+            spread = max(math.sqrt(sum((s["xyz"][i] - xyz[i]) ** 2
+                                       for i in range(3))) for s in recent)
+            if spread > 500.0:
+                self.base_xyz_quality.update({"state": "unstable",
+                                              "spread_m": round(spread, 1)})
+                return
+            first = not (self.base_xyz_source or "").startswith("SPP-")
+            self.base_xyz = xyz
+            self.base_xyz_role = "base"
+            self.base_xyz_source = f"SPP-{system}"
+            self.base_xyz_quality.update({"state": "stable",
+                                          "spread_m": round(spread, 1)})
+            if first:
+                self.log("success", f"已由{system}系统MSM伪距+广播星历自动解算基站坐标 "
+                         f"({solution['nsat']}星, RMS {solution['rms_m']}m)")
 
     # ---- called from a channel's source thread, per validated frame
     def on_frame(self, frame, role):
@@ -139,7 +249,7 @@ class State:
             ch.msg_count += 1
             ch.msg_times.append(now)
             ch.msg_times = ch.msg_times[-200:]
-            if ident == "1005":   # station ARP
+            if ident in ("1005", "1006"):   # station ARP (+ optional height)
                 sid = getattr(msg, "DF003", None)
                 if sid is not None and sid != ch.station:
                     self.log("info", f"[{ch.label}] 基准站 ID: {sid}")
@@ -155,10 +265,13 @@ class State:
                             self.log("success", "已获取基准站 ECEF 坐标，天空图可用真实方位/高度角")
                         self.base_xyz = (x, y, z)
                         self.base_xyz_role = role
+                        self.base_xyz_source = f"RTCM{ident}-{role}"
+                        self.base_xyz_quality = {"state": "authoritative"}
             if not d:
                 return
             ch.station = d["station"]
             ch.tow_ms = d["tow_ms"]
+            ch.tow_ms_by_sys[d["sys"]] = d["tow_ms"]
             ch.last_sysname = d["sysname"]
             for c in d["cells"]:
                 s = ch.sats[c["sat"]]
@@ -168,8 +281,12 @@ class State:
                     "code": c["code"], "signal": c["signal"],
                     "band": c["band"], "band_name": c["band_name"],
                     "freq_mhz": c["freq_mhz"], "cn0": c["cn0"],
-                    "pseudorange": c["pseudorange"], "ts": now,
+                    "pseudorange": c["pseudorange"], "tow_ms": d["tow_ms"],
+                    "ts": now,
                 }
+            spp_job = self._prepare_spp_locked(role, d["sys"], d["tow_ms"])
+        if spp_job:
+            self._run_spp(spp_job)
 
     # ---- dedicated ephemeris-stream frame handler (ignores observations)
     def on_eph_frame(self, frame):
@@ -227,10 +344,11 @@ class State:
             az = el = None
             e = self.eph.get(sat)
             # rover shares the base coordinate -> both channels use base_xyz
-            if e and self.base_xyz and ch.tow_ms is not None \
+            sat_tow_ms = ch.tow_ms_by_sys.get(s.get("sys"))
+            if e and self.base_xyz and sat_tow_ms is not None \
                     and s.get("sys") == e["sys"]:
                 try:
-                    p = orb.sat_ecef(e, ch.tow_ms / 1000.0)
+                    p = orb.sat_ecef(e, sat_tow_ms / 1000.0)
                     if p:
                         az, el = orb.azel(self.base_xyz, p)
                 except Exception:
@@ -374,6 +492,10 @@ class State:
                     "sats": len(self.eph),
                     "by_sys": dict(eph_sys),
                     "base_known": self.base_xyz is not None,
+                    "base_source": self.base_xyz_source,
+                    "base_quality": self.base_xyz_quality,
+                    "base_xyz": ([round(v, 4) for v in self.base_xyz]
+                                 if self.base_xyz else None),
                 },
             }
 
@@ -382,6 +504,8 @@ class State:
         ch = self.channels[role]
         with self.lock:
             ch.reset()
+            if role == "base":
+                self._clear_base_position_locked()
         ch.source = src
         # 连接即录: 为本通道建录制器 (挂载点名用于落盘目录, 文件回放回退到文件名)
         mount = getattr(src, "mountpoint", None) \

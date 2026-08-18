@@ -256,11 +256,11 @@
           <button id="tabFile" onclick="event.stopPropagation();setMode('file')">文件回放</button>
         </div>
         <div id="conn">
-          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="host" placeholder="rtk.example.com"></div>
-          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="port" value="2101"></div>
+          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="host" value="ntrip.im-droid.com"></div>
+          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="port" value="8001"></div>
           <div class="fld ntrip"><label>挂载点</label><input id="mount" placeholder="RTCM33"></div>
-          <div class="fld ntrip"><label>用户名</label><input id="user"></div>
-          <div class="fld ntrip"><label>密码</label><input id="pass" type="password"></div>
+          <div class="fld ntrip"><label>用户名</label><input id="user" value="beidou"></div>
+          <div class="fld ntrip"><label>密码</label><input id="pass" type="password" value="29832611"></div>
           <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="gga" placeholder="$GPGGA,... 留空=非VRS"></div>
           <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="path" placeholder="/path/to/Bds.rtcm"></div>
           <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="speed" value="1"></div>
@@ -286,11 +286,11 @@
           <button id="tabFileR" onclick="event.stopPropagation();setModeR('file')">文件回放</button>
         </div>
         <div id="connR">
-          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="rhost" placeholder="rtk.example.com"></div>
-          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="rport" value="2101"></div>
+          <div class="fld ntrip" style="flex-basis:100%"><label>Caster 地址</label><input id="rhost" value="ntrip.im-droid.com"></div>
+          <div class="fld ntrip" style="flex-basis:70px;flex-grow:0"><label>端口</label><input id="rport" value="8001"></div>
           <div class="fld ntrip"><label>挂载点</label><input id="rmount" placeholder="RTCM33"></div>
-          <div class="fld ntrip"><label>用户名</label><input id="ruser"></div>
-          <div class="fld ntrip"><label>密码</label><input id="rpass" type="password"></div>
+          <div class="fld ntrip"><label>用户名</label><input id="ruser" value="beidou"></div>
+          <div class="fld ntrip"><label>密码</label><input id="rpass" type="password" value="29832611"></div>
           <div class="fld ntrip" style="flex-basis:100%"><label>GGA (VRS 可选)</label><input id="rgga" placeholder="$GPGGA,... 留空=非VRS"></div>
           <div class="fld file hidden" style="flex-basis:100%"><label>文件路径</label><input id="rpath" placeholder="/path/to/rover.rtcm"></div>
           <div class="fld file hidden" style="flex-basis:80px;flex-grow:0"><label>速度×</label><input id="rspeed" value="1"></div>
@@ -645,7 +645,23 @@ function render(d){
   if(ep.state){
     const bs=ep.bytes_in>1024?(ep.bytes_in/1024).toFixed(0)+'K':(ep.bytes_in||0);
     const sysstr=Object.entries(ep.by_sys||{}).map(([k,v])=>k+v).join(' ')||'—';
-    ephStat.textContent=`[${ec.msg||ec.state||''}] 已收 ${bs}B · 报文 ${ep.msg_count} · 星历卫星 ${ep.sats} (${sysstr}) · 基准站 ${ep.base_known?'已知':'未知'}`;
+    const q=ep.base_quality||{};
+    const srcName=s=>s&&s.startsWith('SPP-')?`自动单点(${s.slice(4)})`:
+      s&&s.startsWith('RTCM1005')?'RTCM1005':s&&s.startsWith('RTCM1006')?'RTCM1006':s||'';
+    let bp='未知';
+    if(ep.base_known){
+      bp=`已知/${srcName(ep.base_source)}`;
+      if(q.state==='stable')bp+=` ${q.nsat||'—'}星 RMS=${q.rms_m??'—'}m 稳定度=${q.spread_m??'—'}m`;
+    }else if(q.state==='collecting'||q.state==='checking'){
+      bp=`自动解算中(${q.system||'—'} ${q.samples||0}/3历元)`;
+    }else if(q.state==='unstable'){
+      bp=`自动解算未稳定(${q.system||'—'} 离散=${q.spread_m??'—'}m)`;
+    }else if(q.state==='waiting'){
+      bp=`等待自动解算(${q.system||'—'} ${q.reason||''} 观测=${q.observations??0} 星历=${q.ephemerides??0})`;
+    }else if(q.state==='rejected'){
+      bp=`自动解算暂未通过(${q.system||'—'} ${q.reason||''})`;
+    }
+    ephStat.textContent=`[${ec.msg||ec.state||''}] 已收 ${bs}B · 报文 ${ep.msg_count} · 星历卫星 ${ep.sats} (${sysstr}) · 基准站 ${bp}`;
     ephStat.style.color = ec.state==='error' ? 'var(--err)' : (ep.msg_count>0?'var(--ok)':'var(--mut)');
   } else { ephStat.textContent=ec.msg||'未连接'; ephStat.style.color='var(--mut)'; }
 
@@ -771,8 +787,8 @@ function render(d){
   document.getElementById('freqtab').innerHTML=ft;
 }
 
-// marker radius ∝ CN0, halved vs. the original scale (per spec: 比现在小一倍)
-function skyRad(cn0){return Math.max(1.5,(3+(Math.max(20,cn0)-20)*0.35)*0.5);}
+// marker radius ∝ CN0; 圆点与十字共用此尺寸，在上一版基础上放大 20%。
+function skyRad(cn0){return Math.max(1.8,(3+(Math.max(20,cn0)-20)*0.35)*0.6);}
 // greedy label de-collision: nudge overlapping labels upward, draw leader lines
 function skyLabels(items){
   items.sort((a,b)=>a.y-b.y);
@@ -801,7 +817,6 @@ function drawSky(sats){
   const svg=document.getElementById('sky'); if(!svg)return; const cx=160,cy=160,R=150;
   const hasAzEl=sats.some(s=>s.el!=null&&s.az!=null);
   const baseSet=new Set(sats.filter(s=>s.role==='base').map(s=>s.sat));
-  const baseRad={}; sats.filter(s=>s.role==='base').forEach(s=>baseRad[s.sat]=skyRad(s.maxcn0||25));
   const pos={}, labels=[];
   // build one satellite marker (no label); register position + label item
   function emit(x,y,s,extra){
@@ -810,8 +825,8 @@ function drawSky(sats){
     const tip=`${s.sat} [${s.role==='rover'?'测站':'基站'}] ${extra?extra+' ':''}CN0=${cn0}`;
     let m='', outer=rad;
     if(s.role==='rover'){
-      const ob=baseRad[s.sat]||0;                       // 与基站重合时十字更长
-      const L=ob>0?Math.max(rad,ob)+3:rad+1.5; outer=L;
+      // 十字半臂长与圆点半径完全一致，同一 CN0 下两种标记等大。
+      const L=rad; outer=rad;
       const sw=Math.max(1.6,rad*0.4);
       m=`<path d="M${f(x-L)} ${yf}H${f(x+L)} M${xf} ${f(y-L)}V${f(y+L)}" stroke="${color}" stroke-width="${f(sw)}" stroke-linecap="round"><title>${tip}</title></path>`;
     }else{
@@ -1075,7 +1090,7 @@ function renderExpPeriod(idx){
   const proj=(az,el)=>{const r=R*(90-el)/90,a=az*Math.PI/180;return [cx+r*Math.sin(a),cy-r*Math.cos(a)];};
   // 基站=空心圆○、测站=十字✚（与天空图一致），大小=CN0
   const marker=(x,y,rad,color,rover)=>{const xf=x.toFixed(1),yf=y.toFixed(1);
-    if(rover){const L=rad+1.5,sw=Math.max(1.6,rad*0.4);
+    if(rover){const L=rad,sw=Math.max(1.6,rad*0.4);
       return `<path d="M${(x-L).toFixed(1)} ${yf}H${(x+L).toFixed(1)} M${xf} ${(y-L).toFixed(1)}V${(y+L).toFixed(1)}" stroke="${color}" stroke-width="${sw.toFixed(1)}" stroke-linecap="round"/>`;}
     return `<circle cx="${xf}" cy="${yf}" r="${rad.toFixed(1)}" fill="none" stroke="${color}" stroke-width="1.6"/>`;};
   const selRaw=(document.getElementById('expSatSel')||{}).value||'';

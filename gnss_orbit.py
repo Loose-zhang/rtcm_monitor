@@ -4,7 +4,7 @@ Broadcast-ephemeris -> satellite ECEF position -> azimuth/elevation.
 Decodes RTCM3 ephemeris messages (1019 GPS, 1042 BeiDou, 1045/1046 Galileo,
 1044 QZSS) via pyrtcm field names, runs the standard Keplerian broadcast-orbit
 algorithm (with BeiDou GEO special rotation), and converts to az/el relative to
-the base-station ECEF (from message 1005). GLONASS (1020) ephemeris is stored
+the observer ECEF (from 1005/1006 or the SPP fallback). GLONASS (1020) ephemeris is stored
 but not propagated (not needed for the current BeiDou-only observation skyplot).
 
 pyrtcm already applies each field's scale factor, so the main angles
@@ -29,27 +29,37 @@ FIELDS = {
                        dn="DF087", e="DF090", sqrtA="DF092", Om0="DF095",
                        i0="DF097", w="DF099", Omd="DF100", idot="DF079",
                        Cuc="DF089", Cus="DF091", Crc="DF098", Crs="DF086",
-                       Cic="DF094", Cis="DF096", health="DF102")),
+                       Cic="DF094", Cis="DF096", health="DF102",
+                       toc="DF081", af2="DF082", af1="DF083", af0="DF084",
+                       tgd="DF101")),
     "1042": ("C", dict(sat="DF488", week="DF489", toe="DF505", M0="DF500",
                        dn="DF499", e="DF502", sqrtA="DF504", Om0="DF507",
                        i0="DF509", w="DF511", Omd="DF512", idot="DF491",
                        Cuc="DF501", Cus="DF503", Crc="DF510", Crs="DF498",
-                       Cic="DF506", Cis="DF508", health="DF515")),
+                       Cic="DF506", Cis="DF508", health="DF515",
+                       toc="DF493", af2="DF494", af1="DF495", af0="DF496",
+                       tgd="DF513")),
     "1045": ("E", dict(sat="DF252", week="DF289", toe="DF304", M0="DF299",
                        dn="DF298", e="DF301", sqrtA="DF303", Om0="DF306",
                        i0="DF308", w="DF310", Omd="DF311", idot="DF292",
                        Cuc="DF300", Cus="DF302", Crc="DF309", Crs="DF297",
-                       Cic="DF305", Cis="DF307", health="DF314")),
+                       Cic="DF305", Cis="DF307", health="DF314",
+                       toc="DF293", af2="DF294", af1="DF295", af0="DF296",
+                       tgd="DF312")),
     "1046": ("E", dict(sat="DF252", week="DF289", toe="DF304", M0="DF299",
                        dn="DF298", e="DF301", sqrtA="DF303", Om0="DF306",
                        i0="DF308", w="DF310", Omd="DF311", idot="DF292",
                        Cuc="DF300", Cus="DF302", Crc="DF309", Crs="DF297",
-                       Cic="DF305", Cis="DF307", health="DF287")),
+                       Cic="DF305", Cis="DF307", health="DF287",
+                       toc="DF293", af2="DF294", af1="DF295", af0="DF296",
+                       tgd="DF313")),
     "1044": ("J", dict(sat="DF429", week="DF452", toe="DF442", M0="DF437",
                        dn="DF436", e="DF439", sqrtA="DF441", Om0="DF444",
                        i0="DF446", w="DF448", Omd="DF449", idot="DF450",
                        Cuc="DF438", Cus="DF440", Crc="DF447", Crs="DF435",
-                       Cic="DF443", Cis="DF445", health="DF454")),
+                       Cic="DF443", Cis="DF445", health="DF454",
+                       toc="DF430", af2="DF431", af1="DF432", af0="DF433",
+                       tgd="DF455")),
 }
 EPH_TYPES = set(FIELDS) | {"1020"}
 
@@ -70,6 +80,11 @@ def normalize(parsed):
     if sysc == "J":
         prn += 192
     try:
+        # BeiDou DF513/DF514 are decoded by pyrtcm in nanoseconds; the other
+        # constellations' group-delay fields are already scaled in seconds.
+        tgd = g("tgd")
+        if sysc == "C" and tgd is not None:
+            tgd *= 1e-9
         eph = {
             "sys": sysc, "prn": prn, "sat": f"{sysc}{prn:02d}",
             "week": g("week"), "toe": g("toe"),
@@ -78,6 +93,8 @@ def normalize(parsed):
             "w": g("w") * PI, "Omd": g("Omd") * PI, "idot": g("idot") * PI,
             "Cuc": g("Cuc"), "Cus": g("Cus"), "Crc": g("Crc"), "Crs": g("Crs"),
             "Cic": g("Cic"), "Cis": g("Cis"), "health": g("health"),
+            "toc": g("toc"), "af0": g("af0"), "af1": g("af1"),
+            "af2": g("af2"), "tgd": tgd,
         }
     except (TypeError, ValueError):
         return None
@@ -134,6 +151,40 @@ def sat_ecef(eph, t_sow):
     Y = x*sO + y*cosi*cO
     Z = y*sini
     return (X, Y, Z)
+
+
+def sat_clock(eph, t_sow):
+    """Broadcast satellite clock correction in seconds at system time t_sow.
+
+    Includes the polynomial clock terms, relativistic correction and the
+    broadcast group delay appropriate to the ephemeris message.  The result is
+    the satellite clock offset used in P = range + receiver_clock - c*dts.
+    """
+    toc = eph.get("toc")
+    if toc is None:
+        return 0.0
+    dt = t_sow - toc
+    if dt > 302400:
+        dt -= 604800
+    elif dt < -302400:
+        dt += 604800
+
+    # Eccentric anomaly at transmit time for the relativistic term.
+    mu, _we = CONST[eph["sys"]]
+    A = eph["sqrtA"] ** 2
+    tk = t_sow - eph["toe"]
+    if tk > 302400:
+        tk -= 604800
+    elif tk < -302400:
+        tk += 604800
+    n = math.sqrt(mu / A**3) + eph["dn"]
+    M = eph["M0"] + n * tk
+    E = M
+    for _ in range(15):
+        E = M + eph["e"] * math.sin(E)
+    rel = -4.442807633e-10 * eph["e"] * eph["sqrtA"] * math.sin(E)
+    return (eph.get("af0") or 0.0) + (eph.get("af1") or 0.0) * dt \
+        + (eph.get("af2") or 0.0) * dt * dt + rel - (eph.get("tgd") or 0.0)
 
 
 def ecef_to_geodetic(x, y, z):
