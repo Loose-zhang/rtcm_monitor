@@ -25,6 +25,12 @@ python3 app.py
 ```
 浏览器打开 **http://127.0.0.1:7999**
 
+从 security-monitor 设备参数页的“检查卫星信号”按钮进入时，页面地址为
+`http://当前主机名:7999/?sid={测站设备ID}`。security-monitor 会通过一次性会话
+把关联基站 ID 和测站 ID 分别填入两路 NTRIP 挂载点；关闭该标签页后，由
+security-monitor 回收这次会话临时开启的两路 NtripCaster 推送。直接打开 7999
+的普通页面不参与这套启停联动。
+
 ### 接入 NTRIP
 在“数据源 → NTRIP 接入”填 Caster 地址 / 端口 / 挂载点 / 用户名 / 密码，点“连接”。
 （凭据仅经本机后端转发给 caster，不落盘。需在能访问该 caster 的网络下运行。）

@@ -455,6 +455,61 @@ const SID = (()=>{
     try{localStorage.setItem('rtcm_sid',s);}catch(e){} }
   return s; })();
 
+// security-monitor 从“检查卫星信号”按钮启动时，通过按测站 ID 命名、120 秒有效
+// 的同主机 Cookie 传递一次性会话信息（Cookie 不受端口隔离）。URL 仍严格保持
+// /?sid={测站ID}；普通直接打开 7999 不会得到该信息，
+// 因而既不会自动填写挂载点，也不会在关页时改变设备的 NtripCaster 开关。
+const SECURITY_MONITOR_LAUNCH = (()=>{
+  const cookieName='security_monitor_satellite_'+SID;
+  let raw='';
+  try{
+    const item=document.cookie.split(';').map(v=>v.trim())
+      .find(v=>v.startsWith(cookieName+'='));
+    if(item){
+      raw=decodeURIComponent(item.slice(cookieName.length+1));
+      document.cookie=cookieName+'=; Max-Age=0; SameSite=Lax; Path=/';
+      sessionStorage.setItem('security_monitor_satellite_launch',raw);
+    }else{
+      raw=sessionStorage.getItem('security_monitor_satellite_launch')||'';
+    }
+    if(!raw)return null;
+    const launch=JSON.parse(raw);
+    if(!launch.token||!launch.roverId||!launch.baseId
+        ||!launch.heartbeatUrl||!launch.closeUrl
+        ||String(launch.roverId)!==String(SID))return null;
+    return launch;
+  }catch(e){
+    console.error('security-monitor 启动参数无效',e);
+    return null;
+  }
+})();
+
+if(SECURITY_MONITOR_LAUNCH){
+  // security-monitor 的 NtripCaster 挂载点与设备 ID 同名。
+  document.getElementById('mount').value=SECURITY_MONITOR_LAUNCH.baseId;
+  document.getElementById('rmount').value=SECURITY_MONITOR_LAUNCH.roverId;
+
+  const launchBody=()=>new URLSearchParams({token:SECURITY_MONITOR_LAUNCH.token});
+  const heartbeat=()=>{
+    fetch(SECURITY_MONITOR_LAUNCH.heartbeatUrl,{
+      method:'POST',mode:'no-cors',body:launchBody(),keepalive:true
+    }).catch(()=>{});
+  };
+  const requestClose=()=>{
+    try{
+      navigator.sendBeacon(SECURITY_MONITOR_LAUNCH.closeUrl,launchBody());
+    }catch(e){}
+  };
+
+  // 关页先请求回收；后端保留 15 秒宽限，刷新或 bfcache 恢复时的 heartbeat
+  // 会取消回收，从而避免把“刷新页面”误判成真正关闭。
+  heartbeat();
+  window.setInterval(heartbeat,30*1000);
+  window.addEventListener('pagehide',requestClose);
+  window.addEventListener('pageshow',heartbeat);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)heartbeat();});
+}
+
 // ---------- collapsible cards ----------
 function toggleCard(id, head){
   const el=document.getElementById(id);
