@@ -232,7 +232,7 @@ def build_skyplot_html(title, points, role=None):
     """用区间内的卫星位置点生成自包含「按周期回放」天空图 (SVG + HTML)。
 
     点数据内嵌为 JSON; 时间轴每格=一个 10min 周期, 只画该周期的卫星位置,
-    拖动/播放可看卫星行进与 CN0 变化。颜色按星座、大小按 CN0, base=实心圆●、rover=十字✚。"""
+    拖动/播放可看卫星行进与 CN0 变化。颜色按星座、大小按 CN0, base=空心圆○、rover=十字✚。"""
     cx = cy = 320
     R = 300
     svg = []
@@ -263,7 +263,7 @@ def build_skyplot_html(title, points, role=None):
     nsat = len({d[1] for d in data})
     nper = len({d[0] // 600 for d in data})
     sub = (f'{nsat} 颗卫星 · {nper} 个周期 · 点大小=载噪比CN0 · 外圈10°/内圈75° 橙色虚线为常用高度角'
-           + (' · ✚ 测站' if role == 'rover' else ' · ● 基站'))
+           + (' · ✚ 测站' if role == 'rover' else ' · ○ 基站'))
     return f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <title>{title} · 轨迹叠加天空图</title>
 <style>body{{margin:0;background:#0b0f14;color:#e6edf3;
@@ -310,7 +310,7 @@ function render(idx){{
       tip=esc(sat)+(cn0!=null?' · '+Math.round(cn0)+' dBHz':'');
     if(ROLE==='rover'){{var L=r+2;
       out+='<path d="M'+(x-L).toFixed(1)+' '+y.toFixed(1)+'H'+(x+L).toFixed(1)+' M'+x.toFixed(1)+' '+(y-L).toFixed(1)+'V'+(y+L).toFixed(1)+'" stroke="'+color+'" stroke-width="2" stroke-linecap="round"><title>'+tip+'</title></path>';
-    }}else out+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="'+color+'" stroke="#0f1419" stroke-width="1"><title>'+tip+'</title></circle>';
+    }}else out+='<circle cx="'+x.toFixed(1)+'" cy="'+y.toFixed(1)+'" r="'+r.toFixed(1)+'" fill="none" stroke="'+color+'" stroke-width="1.6"><title>'+tip+'</title></circle>';
     if(!seen[sat]){{seen[sat]=1;out+='<text x="'+x.toFixed(1)+'" y="'+(y-r-3).toFixed(1)+'" fill="#c5d1e0" font-size="11" text-anchor="middle">'+esc(sat)+'</text>';}}
   }});
   marks.innerHTML=out;
