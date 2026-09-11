@@ -70,13 +70,14 @@ class Recorder:
     """单个通道 (base/rover) 的录制器。线程安全 (数据源线程调用 feed)。"""
 
     def __init__(self, base_dir, sid, role, label, mountpoint,
-                 sat_snapshot_fn, logger=None):
+                 sat_snapshot_fn, logger=None, snapshot_saved_fn=None):
         self.sid = sid
         self.role = role
         self.label = label
         self.mount = mountpoint
         self._snap = sat_snapshot_fn          # () -> [{sat,sys,prn,az,el,cn0}, ...]
         self._log = logger or (lambda level, msg: None)
+        self._snapshot_saved = snapshot_saved_fn or (lambda payload: None)
         self._lock = threading.Lock()
 
         self.dir = os.path.join(base_dir, _safe(sid),
@@ -174,6 +175,7 @@ class Recorder:
         cur["nsat"] = len(rows)
         cur["dirty"] = False
         self._last_write = now
+        self._notify_snapshot(cur, sealed=False)
 
     def _seal(self, cur):
         """周期封存: 向 index.jsonl 追加一行 (第三期按时间段检索用)。"""
@@ -191,6 +193,30 @@ class Recorder:
         }
         with open(self.index_path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(line, ensure_ascii=False) + "\n")
+        self._notify_snapshot(cur, sealed=True)
+
+    def _notify_snapshot(self, cur, sealed):
+        """Queue a compact snapshot; callback must return quickly and never raise."""
+        points = []
+        for sat in cur.get("sats", []):
+            if sat.get("az") is None or sat.get("el") is None:
+                continue
+            points.append({
+                "sat": sat.get("sat"), "sys": sat.get("sys"),
+                "prn": sat.get("prn"), "az": sat.get("az"),
+                "el": sat.get("el"), "cn0": sat.get("cn0"),
+            })
+        payload = {
+            "role": self.role,
+            "periodStart": cur.get("start"),
+            "epochTime": int(cur.get("ts")) if cur.get("ts") else None,
+            "sealed": bool(sealed),
+            "satellites": points,
+        }
+        try:
+            self._snapshot_saved(payload)
+        except Exception as exc:
+            self._log("warn", f"[{self.label}] 周期快照同步入队失败: {exc}")
 
     # ---- 数据源停止时调用: 落盘并封存当前周期 --------------------------
     def close(self):

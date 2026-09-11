@@ -12,9 +12,12 @@ import argparse
 import json
 import math
 import os
+import queue
 import statistics
 import threading
 import time
+import urllib.error
+import urllib.request
 from collections import defaultdict, deque
 
 from flask import Flask, Response, request, send_from_directory
@@ -31,7 +34,57 @@ STALE_SEC = 15.0          # drop a signal not refreshed for this long
 RECORD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recordings")
 # 第三期导出根目录: 项目下 exports/
 EXPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
+SECURITY_MONITOR_BASE_URL = os.environ.get(
+    "SECURITY_MONITOR_BASE_URL", "http://127.0.0.1:9901").rstrip("/")
 app = Flask(__name__, static_folder="static")
+
+
+class SnapshotUploadWorker:
+    """Non-blocking, server-to-server delivery of token-bound period snapshots."""
+
+    def __init__(self):
+        self.items = queue.Queue(maxsize=2000)
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def put(self, endpoint, token, payload):
+        item = dict(payload)
+        item["token"] = token
+        try:
+            self.items.put_nowait((endpoint, item))
+        except queue.Full:
+            raise RuntimeError("卫星周期同步队列已满")
+
+    def _run(self):
+        while True:
+            endpoint, payload = self.items.get()
+            try:
+                body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                last_error = None
+                for attempt in range(3):
+                    try:
+                        req = urllib.request.Request(
+                            endpoint, data=body,
+                            headers={"Content-Type": "application/json"}, method="POST")
+                        with urllib.request.urlopen(req, timeout=8) as resp:
+                            raw = resp.read()
+                            if resp.status < 200 or resp.status >= 300:
+                                raise RuntimeError(f"HTTP {resp.status}")
+                            result = json.loads(raw.decode("utf-8")) if raw else {}
+                            if result.get("code") != 0:
+                                raise RuntimeError(result.get("msg") or "主系统拒绝周期数据")
+                        last_error = None
+                        break
+                    except Exception as exc:
+                        last_error = exc
+                        if attempt < 2:
+                            time.sleep(0.25 * (attempt + 1))
+                if last_error is not None:
+                    print(f"卫星周期同步失败: {last_error}")
+            finally:
+                self.items.task_done()
+
+
+SNAPSHOT_UPLOADS = SnapshotUploadWorker()
 
 
 def _msg_name(ident):
@@ -114,10 +167,29 @@ class State:
         # ---- event log (ring buffer, sent to browser) ----
         self.events = deque(maxlen=200)
         self._last_tick = 0.0
+        self.security_monitor_token = None
+        self.security_monitor_rover = None
+        self.security_monitor_base = None
 
     def log(self, level, msg):
         """level: info / success / warn / error"""
         self.events.append({"ts": time.time(), "level": level, "msg": msg})
+
+    def bind_security_monitor(self, token, rover_id, base_id):
+        if not token or str(rover_id) != str(self.sid) or not base_id:
+            raise ValueError("security-monitor 会话参数无效")
+        with self.lock:
+            self.security_monitor_token = str(token)
+            self.security_monitor_rover = str(rover_id)
+            self.security_monitor_base = str(base_id)
+
+    def _queue_period_snapshot(self, payload):
+        # Called while Recorder holds its own lock; do not acquire State.lock here.
+        token = self.security_monitor_token
+        if not token:
+            return
+        endpoint = SECURITY_MONITOR_BASE_URL + "/api/satellite-monitor/period"
+        SNAPSHOT_UPLOADS.put(endpoint, token, payload)
 
     def _clear_base_position_locked(self):
         self.base_xyz = None
@@ -514,7 +586,8 @@ class State:
             ch.recorder = rec.Recorder(
                 RECORD_DIR, self.sid, role, ch.label, mount,
                 sat_snapshot_fn=lambda _r=role: self._sat_positions(_r),
-                logger=self.log)
+                logger=self.log,
+                snapshot_saved_fn=self._queue_period_snapshot)
             with self.lock:
                 self.log("info", f"[{ch.label}] 已开始录制 -> {ch.recorder.dir}")
         except Exception as e:
@@ -646,6 +719,18 @@ def api_connect():
         return {"ok": True}
     except Exception as e:
         return {"ok": False, "error": str(e)}, 400
+
+
+@app.route("/api/security-monitor/bind", methods=["POST"])
+def api_security_monitor_bind():
+    cfg = request.get_json(force=True) or {}
+    sid = cfg.get("sid") or request.args.get("sid")
+    try:
+        MANAGER.get(sid).bind_security_monitor(
+            cfg.get("token"), cfg.get("roverId"), cfg.get("baseId"))
+        return {"ok": True}
+    except (TypeError, ValueError) as exc:
+        return {"ok": False, "error": str(exc)}, 400
 
 
 @app.route("/api/disconnect", methods=["POST"])

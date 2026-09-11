@@ -489,6 +489,14 @@ if(SECURITY_MONITOR_LAUNCH){
   document.getElementById('mount').value=SECURITY_MONITOR_LAUNCH.baseId;
   document.getElementById('rmount').value=SECURITY_MONITOR_LAUNCH.roverId;
 
+  // 将一次性 token 绑定到 7999 后端；此后每个 10 分钟周期由服务端同步，
+  // 不依赖浏览器持续打开或跨域请求成功。
+  fetch('/api/security-monitor/bind',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sid:SID,token:SECURITY_MONITOR_LAUNCH.token,
+      roverId:SECURITY_MONITOR_LAUNCH.roverId,baseId:SECURITY_MONITOR_LAUNCH.baseId})
+  }).catch(e=>console.error('卫星检查会话绑定失败',e));
+
   const launchBody=()=>new URLSearchParams({token:SECURITY_MONITOR_LAUNCH.token});
   const heartbeat=()=>{
     fetch(SECURITY_MONITOR_LAUNCH.heartbeatUrl,{
