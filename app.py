@@ -147,6 +147,18 @@ class Channel:
         self._recon_flagged = {}
 
 
+def _signal_cn0_map(signals):
+    """频点名 -> CN0(dB-Hz)。同名频点(如 1C/1W 都是 L1)取最强值，无 CN0 的跳过。"""
+    out = {}
+    for g in signals or []:
+        name, cn0 = g.get("signal"), g.get("cn0")
+        if not name or not cn0:
+            continue
+        if name not in out or cn0 > out[name]:
+            out[name] = cn0
+    return out
+
+
 class State:
     def __init__(self, sid="default"):
         self.sid = sid
@@ -464,7 +476,8 @@ class State:
         with self.lock:
             c_sats, _stat, _sc = self._channel_snapshot(role, now)
         return [{"sat": s["sat"], "sys": s["sys"], "prn": s["prn"],
-                 "az": s["az"], "el": s["el"], "cn0": s["maxcn0"]}
+                 "az": s["az"], "el": s["el"], "cn0": s["maxcn0"],
+                 "signals": _signal_cn0_map(s["signals"])}
                 for s in c_sats]
 
     # ---- snapshot for the browser

@@ -75,7 +75,7 @@ class Recorder:
         self.role = role
         self.label = label
         self.mount = mountpoint
-        self._snap = sat_snapshot_fn          # () -> [{sat,sys,prn,az,el,cn0}, ...]
+        self._snap = sat_snapshot_fn          # () -> [{sat,sys,prn,az,el,cn0,signals}, ...]
         self._log = logger or (lambda level, msg: None)
         self._snapshot_saved = snapshot_saved_fn or (lambda payload: None)
         self._lock = threading.Lock()
@@ -205,6 +205,7 @@ class Recorder:
                 "sat": sat.get("sat"), "sys": sat.get("sys"),
                 "prn": sat.get("prn"), "az": sat.get("az"),
                 "el": sat.get("el"), "cn0": sat.get("cn0"),
+                "signals": sat.get("signals") or {},
             })
         payload = {
             "role": self.role,
